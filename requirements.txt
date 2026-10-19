@@ -1,0 +1,5 @@
+streamlit
+anthropic
+requests
+pillow
+opencv-python-headless
