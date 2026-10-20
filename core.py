@@ -57,9 +57,12 @@ def analyse_image(jpeg, cfg=None):
         m = re.search(r"\{.*\}", t, re.S)
         if not m: raise ValueError("No JSON object found in model response")
         raw = m.group(0)
-        # Fix common LLM JSON issues: trailing commas, single quotes, unquoted keys
-        raw = re.sub(r",\s*([}\]])", r"\1", raw)          # remove trailing commas
-        raw = raw.replace("'", '"')                        # single -> double quotes
+        try: return json.loads(raw)                      # valid JSON first: never alter it
+        except Exception: pass
+        raw = re.sub(r",\s*([}\]])", r"\1", raw)          # trailing commas
+        try: return json.loads(raw)
+        except Exception: pass
+        raw = raw.replace("'", '"')                       # last resort: single quotes
         raw = re.sub(r'(?<=\{|,)\s*(\w+)\s*:', r' "\1":', raw)  # unquoted keys
         return json.loads(raw)
     r = pj(ask_llm(VISION_PROMPT, jpeg, cfg))
