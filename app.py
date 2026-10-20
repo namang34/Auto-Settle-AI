@@ -38,14 +38,28 @@ with st.sidebar:
               "excess": st.number_input("Policy excess (\u20b9)", 0, 100000, 1000), "age": st.number_input("Vehicle age (years)", 0, 30, 3),
               "claims": st.number_input("Claims in last 12 months", 0, 20, 0)}
     st.header("AI models")
-    if "profiles" not in st.session_state: st.session_state.profiles = {"Default (from secrets)": None}
-    with st.expander("Add a model to try"):
-        pn = st.text_input("Name (your label)", key="pn"); pt = st.selectbox("Type", ["openai-compatible", "anthropic", "ollama"], key="pt")
-        pm = st.text_input("Model name (must support images)", key="pm"); pb = st.text_input("Base URL (not needed for anthropic)", key="pb")
-        pk = st.text_input("API key (kept only in this session)", type="password", key="pk")
-        if st.button("Add model") and pn and pm:
-            st.session_state.profiles[pn] = {"type": "openai" if pt == "openai-compatible" else pt, "model": pm, "base_url": pb, "key": pk}
-    active = st.selectbox("Model used for claims", list(st.session_state.profiles)); cfg = st.session_state.profiles[active]
+    # Auto-load default model from Streamlit secrets (set in Cloud -> Settings -> Secrets)
+    if "profiles" not in st.session_state:
+        default_cfg = None
+        try:
+            s = st.secrets["ai"]
+            default_cfg = {"type": s.get("type", "openai"), "model": s["model_name"], "base_url": s.get("base_url", ""), "key": s.get("api_key", "")}
+        except Exception:
+            pass
+        st.session_state.profiles = {"Default": default_cfg} if default_cfg else {}
+    admin = st.checkbox("Admin / add model", value=False)
+    if admin:
+        with st.expander("Add a model to try", expanded=True):
+            pn = st.text_input("Name (your label)", key="pn"); pt = st.selectbox("Type", ["openai-compatible", "anthropic", "ollama"], key="pt")
+            pm = st.text_input("Model name (must support images)", key="pm"); pb = st.text_input("Base URL (not needed for anthropic)", key="pb")
+            pk = st.text_input("API key (kept only in this session)", type="password", key="pk")
+            if st.button("Add model") and pn and pm:
+                st.session_state.profiles[pn] = {"type": "openai" if pt == "openai-compatible" else pt, "model": pm, "base_url": pb, "key": pk}
+    if st.session_state.profiles:
+        active = st.selectbox("Model used for claims", list(st.session_state.profiles)); cfg = st.session_state.profiles[active]
+    else:
+        st.warning("No AI model configured. Check Admin to add one, or set secrets in Streamlit Cloud.")
+        cfg = None
 
 t1, t2, t3, t4, t5 = st.tabs(["New claim", "Adjuster dashboard", "Audit trail", "Assumptions", "Compare models"])
 
