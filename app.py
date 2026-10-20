@@ -24,19 +24,28 @@ def to_jpeg(raw, is_video):
     else: img = Image.open(io.BytesIO(raw)).convert("RGB")
     img.thumbnail((1280, 1280)); b = io.BytesIO(); img.save(b, "JPEG", quality=85); return img, b.getvalue()
 
-# ---------- sidebar: guardrails + policy ----------
+# ---------- sidebar ----------
 with st.sidebar:
-    st.header("Guardrails")
-    rails = {"lo": st.number_input("Offer floor (% of net claim)", 1, 100, 75) / 100,
-             "hi": st.number_input("Offer ceiling (%)", 1, 100, 90) / 100,
-             "step": st.number_input("Concession per round (%)", 1, 50, 4) / 100,
-             "max_rounds": st.number_input("Max negotiation rounds", 1, 10, 3),
-             "min_conf": st.number_input("Min AI confidence (%)", 0, 100, 70),
-             "cap": st.number_input("Auto-settle cap (\u20b9)", 0, 1000000, 25000)}
-    st.header("Policy record")
-    policy = {"active": st.selectbox("Status", ["Active", "Lapsed"]) == "Active", "limit": st.number_input("Max claim limit (\u20b9)", 0, 1000000, 50000),
-              "excess": st.number_input("Policy excess (\u20b9)", 0, 100000, 1000), "age": st.number_input("Vehicle age (years)", 0, 30, 3),
-              "claims": st.number_input("Claims in last 12 months", 0, 20, 0)}
+    # Admin mode toggle at the top
+    admin = st.checkbox("\U0001f527 Insurer / Admin mode", value=False)
+
+    if admin:
+        st.header("Guardrails")
+        rails = {"lo": st.number_input("Offer floor (% of net claim)", 1, 100, 75) / 100,
+                 "hi": st.number_input("Offer ceiling (%)", 1, 100, 90) / 100,
+                 "step": st.number_input("Concession per round (%)", 1, 50, 4) / 100,
+                 "max_rounds": st.number_input("Max negotiation rounds", 1, 10, 3),
+                 "min_conf": st.number_input("Min AI confidence (%)", 0, 100, 70),
+                 "cap": st.number_input("Auto-settle cap (\u20b9)", 0, 1000000, 25000)}
+        st.header("Policy record")
+        policy = {"active": st.selectbox("Status", ["Active", "Lapsed"]) == "Active", "limit": st.number_input("Max claim limit (\u20b9)", 0, 1000000, 50000),
+                  "excess": st.number_input("Policy excess (\u20b9)", 0, 100000, 1000), "age": st.number_input("Vehicle age (years)", 0, 30, 3),
+                  "claims": st.number_input("Claims in last 12 months", 0, 20, 0)}
+    else:
+        # Customer mode: sensible defaults, clean sidebar
+        rails = {"lo": 0.75, "hi": 0.90, "step": 0.04, "max_rounds": 3, "min_conf": 70, "cap": 25000}
+        policy = {"active": True, "limit": 50000, "excess": 1000, "age": 3, "claims": 0}
+
     st.header("AI models")
     # Auto-load default model from Streamlit secrets (set in Cloud -> Settings -> Secrets)
     if "profiles" not in st.session_state:
@@ -47,41 +56,49 @@ with st.sidebar:
         except Exception:
             pass
         st.session_state.profiles = {"Default": default_cfg} if default_cfg else {}
-    admin = st.checkbox("Admin / add model", value=False)
     if admin:
-        with st.expander("Add a model to try", expanded=True):
+        with st.expander("Add a model to try", expanded=False):
             pn = st.text_input("Name (your label)", key="pn"); pt = st.selectbox("Type", ["openai-compatible", "anthropic", "ollama"], key="pt")
             pm = st.text_input("Model name (must support images)", key="pm"); pb = st.text_input("Base URL (not needed for anthropic)", key="pb")
             pk = st.text_input("API key (kept only in this session)", type="password", key="pk")
             if st.button("Add model") and pn and pm:
                 st.session_state.profiles[pn] = {"type": "openai" if pt == "openai-compatible" else pt, "model": pm, "base_url": pb, "key": pk}
     if st.session_state.profiles:
-        active = st.selectbox("Model used for claims", list(st.session_state.profiles)); cfg = st.session_state.profiles[active]
+        if admin:
+            active = st.selectbox("Model used for claims", list(st.session_state.profiles))
+        else:
+            active = list(st.session_state.profiles)[0]  # auto-select first model for customers
+        cfg = st.session_state.profiles[active]
     else:
-        st.warning("No AI model configured. Check Admin to add one, or set secrets in Streamlit Cloud.")
+        if admin:
+            st.warning("No AI model configured. Add one above, or set secrets in Streamlit Cloud.")
         cfg = None
 
 t1, t2, t3, t4, t5 = st.tabs(["New claim", "Adjuster dashboard", "Audit trail", "Assumptions", "Compare models"])
 
 with t1:
     st.title("Auto-Settle AI")
+    st.caption("Upload a photo of your vehicle damage. We\u2019ll assess the damage, estimate the repair cost, and offer you an instant cash settlement \u2014 no garage wait.")
     up = st.file_uploader("Damage photo or video", type=["jpg", "jpeg", "png", "webp", "mp4", "mov"])
     claimed = st.selectbox("Customer says the damaged part is", list(core.PARTS))
     with st.expander("AI unavailable? Enter findings manually"):
         mp = st.multiselect("Damaged parts", list(core.PARTS), ["bumper"]); mt = st.selectbox("Damage type", list(core.TYP))
         ms = st.selectbox("Severity", list(core.SEV)); mc = st.slider("Confidence %", 0, 100, 85); mq = st.checkbox("Photo is clear", True)
         manual = st.button("Use manual findings")
-    go = st.button("Analyse with AI", type="primary", disabled=up is None)
+    go = st.button("Analyse with AI", type="primary", disabled=(up is None or cfg is None))
+    if cfg is None and up is not None:
+        st.info("No AI model configured. Enable Insurer/Admin mode in the sidebar to add one.")
     finding, extra, img = None, [], None
     if go and up:
-        try:
-            raw = up.getvalue(); img, jpeg = to_jpeg(raw, up.type.startswith("video"))
-            h = hashlib.sha256(jpeg).hexdigest(); d = db_load()
-            if h in d["hashes"]: extra.append("Duplicate photo: this image was already submitted")
-            else: d["hashes"].append(h); db_save(d)
-            finding = core.analyse_image(jpeg, cfg); log("AI_VISION", json.dumps(finding))
-            st.session_state.img = (img, finding.get("box"))
-        except Exception as e: st.error(f"AI step failed: {e}. Use the manual option."); log("AI_ERROR", str(e))
+        with st.spinner("Analysing your photo \u2014 this takes about 10-15 seconds..."):
+            try:
+                raw = up.getvalue(); img, jpeg = to_jpeg(raw, up.type.startswith("video"))
+                h = hashlib.sha256(jpeg).hexdigest(); d = db_load()
+                if h in d["hashes"]: extra.append("Duplicate photo: this image was already submitted")
+                else: d["hashes"].append(h); db_save(d)
+                finding = core.analyse_image(jpeg, cfg); log("AI_VISION", json.dumps(finding))
+                st.session_state.img = (img, finding.get("box"))
+            except Exception as e: st.error(f"AI step failed: {e}. Use the manual option."); log("AI_ERROR", str(e))
     if manual and mp:
         finding = {"part": mp[0], "type": mt, "severity": ms, "confidence": mc, "quality_ok": mq,
                    "items": [{"part": p, "type": mt, "severity": ms} for p in mp], "notes": "Manually entered findings"}
@@ -156,21 +173,48 @@ with t3:
     st.download_button("Download audit trail (JSON)", json.dumps(d["log"], indent=1), "audit_trail.json")
 
 with t4:
+    st.subheader("Technology stack")
+    st.markdown("""
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | Streamlit (Python) |
+| **Vision AI** | Any OpenAI-compatible API (Gemini, GPT-4o, Groq), Anthropic Claude, or local Ollama model (<20B params) |
+| **Backend logic** | Pure Python \u2014 deterministic cost calculation, negotiation engine, escalation rules |
+| **Deployment** | Streamlit Community Cloud (auto-deploy from GitHub) |
+| **Data** | Mock parts & labour table; CarDD dataset (4,000 images, 6 damage types) for benchmarking |
+""")
+    st.subheader("Architecture principle")
+    st.info("\U0001f9e0 **The AI describes; the code decides.** The vision model identifies damage. Plain code calculates every cost, sets every limit, and enforces every guardrail. The chat model only phrases messages \u2014 it never controls amounts.")
+
+    st.subheader("Assumptions")
     st.markdown("""
 - **Scope:** minor motor claims settled as cash-in-lieu instead of a garage repair.
 - **Cost data:** mock parts and labour table with illustrative rupee values and a flat labour rate of \u20b9500 per hour.
-- **Settlement range:** 70% to 90% of the net claim value, editable. Code, not the chatbot, enforces every limit.
+- **Settlement range:** 75% to 90% of the net claim value, editable. Code, not the chatbot, enforces every limit.
 - **AI role:** the vision model only describes damage. Amounts, limits and escalation are plain code.
 - **Policy rules:** illustrative. Parts depreciate 5% per year (max 50%), excess is deducted, lapsed policy, over-limit claims, or 3+ claims escalate. Real insurer terms vary.
 - **Fraud and risk:** a simple illustrative score. Duplicate photos are detected across all claims stored in this app. Rule-changing or angry chat messages escalate.
-- **Model choice:** set PROVIDER=ollama to run a small local vision model (under 20B parameters) instead of the Claude API.
+- **Model choice:** supports multiple AI providers. Can run a small local vision model (under 20B parameters) via Ollama for bonus points.
+- **IRDAI:** claims under \u20b950,000 do not require a physical surveyor. Our auto-settle cap is \u20b925,000, well within this threshold.
 - **Not covered:** vehicle market value, fraud history across customers, real payment integration.
+""")
+
+    st.subheader("Known limitations")
+    st.markdown("""
+- AI damage-detection accuracy has **not been measured** on a labelled dataset yet.
+- Cost table is illustrative, not sourced from real garages or insurers.
+- No real payment integration \u2014 the UPI payout is simulated.
+- Hindi chat and several fraud checks are still being tested.
+- Free Streamlit hosting **wipes saved claims on restart** and sleeps when idle.
+- Bounding box accuracy varies across models.
+- Risk score is a rule-based formula, not a trained fraud model.
+- Settlement rules tested with 500 random negotiations (offer never exceeded ceiling), but only on the Python backend.
 """)
 
 with t5:
     import pandas as pd
     st.subheader("Compare AI models on the same photo")
-    st.caption("Add models in the sidebar, upload a test photo, tick the parts that are truly damaged, and run. Repeat with several photos, then read the averages.")
+    st.caption("Add models in the sidebar (enable Admin mode), upload a test photo, tick the parts that are truly damaged, and run. Repeat with several photos, then read the averages.")
     cu = st.file_uploader("Test photo", type=["jpg", "jpeg", "png", "webp"], key="cmpu")
     truth = st.multiselect("Parts that are truly damaged (enables accuracy scores)", list(core.PARTS))
     chosen = st.multiselect("Models to compare", list(st.session_state.profiles), default=list(st.session_state.profiles)[:1])
