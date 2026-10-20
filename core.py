@@ -30,7 +30,9 @@ def ask_llm(prompt, img_jpeg=None, cfg=None):
     if t == "openai":
         content = [{"type": "text", "text": prompt}]
         if b64: content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64}})
-        r = requests.post((cfg.get("base_url") or "https://api.openai.com/v1").rstrip("/") + "/chat/completions", timeout=120,
+        base = (cfg.get("base_url") or "https://api.openai.com/v1").rstrip("/")
+        url = base + "/chat/completions"
+        r = requests.post(url, timeout=120,
                           headers={"Authorization": "Bearer " + cfg["key"]}, json={"model": cfg["model"], "messages": [{"role": "user", "content": content}]})
         r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
     import anthropic
