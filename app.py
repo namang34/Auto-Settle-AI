@@ -1,22 +1,44 @@
-import hashlib, io, json, os, re, tempfile, time
+import hashlib, html, io, json, os, re, tempfile, time
 import streamlit as st
 from PIL import Image, ImageDraw
 import core
 
-st.set_page_config(page_title="Auto-Settle AI", page_icon="\U0001F697", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Auto-Settle AI", page_icon="\u26a1", layout="wide", initial_sidebar_state="collapsed")
+E = html.escape
 st.markdown("""<style>
-.block-container{padding-top:1.2rem;max-width:1150px}
+:root{--accent:#EB6F46;--ok:#22A55A;--bad:#EF4444;--warn:#F59E0B;--line:rgba(128,128,128,.30);--card:rgba(128,128,128,.08)}
+html,body,[class*="css"]{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif}
+.block-container{padding-top:1.1rem;max-width:1180px}
 footer{visibility:hidden}
-.hero{background:#A72218;border-radius:16px;padding:22px 28px;margin-bottom:12px}
-.hero h1{color:#fff;margin:0;font-size:2rem;padding:0}.hero p{color:#E9E7E0;margin:.3rem 0 0;font-size:1.02rem}
-.steps{display:flex;gap:8px;margin:4px 0 14px}
-.step{flex:1;text-align:center;padding:8px 4px;border-radius:999px;background:#E3C5B2;color:#7A5C55;font-weight:600;font-size:.85rem}
-.step.on{background:#EB6F46;color:#2B1A17}.step.done{background:#A72218;color:#fff}
-.card{background:#fff;border:1px solid #E3C5B2;border-radius:14px;padding:14px 16px;margin-bottom:10px}
-.badge{display:inline-block;padding:5px 14px;border-radius:999px;font-weight:700;font-size:.9rem;margin-bottom:8px}
-.ok{background:#DFF0E3;color:#1B6B34}.bad{background:#F8D7D3;color:#A72218}
-.lbl{color:#7A5C55;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
-.big{font-size:1.7rem;font-weight:800;color:#A72218;line-height:1.15}.mid{font-size:1.1rem;font-weight:700;color:#A72218}
+.hero{background:linear-gradient(135deg,#1B2A4A 0%,#0B1220 100%);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px 28px;margin-bottom:14px;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.hero .tag{display:inline-block;padding:5px 14px;border-radius:999px;border:1px solid var(--accent);color:#FFB59E;background:rgba(235,111,70,.12);font-size:.78rem;font-weight:700;letter-spacing:.03em}
+.hero h1{color:#fff;margin:.55rem 0 .15rem;font-size:2.05rem;font-weight:800;padding:0;letter-spacing:-.01em}
+.hero p{color:#B8C2D6;margin:0;font-size:1rem;max-width:760px;line-height:1.5}
+.flow{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.flow span{font-size:.8rem;color:#DCE3F0;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);padding:5px 12px;border-radius:999px}
+.steps{display:flex;gap:8px;margin:2px 0 14px}
+.step{flex:1;text-align:center;padding:8px 4px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-weight:600;font-size:.84rem;opacity:.6}
+.step.on{border-color:var(--accent);color:var(--accent);opacity:1}.step.done{opacity:1;border-color:var(--ok);color:var(--ok)}
+[data-testid="stVerticalBlockBorderWrapper"]{border-radius:10px}
+.card{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:14px 16px;box-shadow:0 2px 10px rgba(0,0,0,.12);margin-bottom:10px}
+.lbl{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;opacity:.65;font-weight:600}
+.val{font-size:1.15rem;font-weight:700;margin-top:2px}.big{font-size:1.75rem;font-weight:800;line-height:1.15}
+.pill{display:inline-flex;gap:6px;align-items:center;padding:5px 12px;border-radius:999px;font-size:.8rem;font-weight:600;border:1px solid var(--line);background:var(--card);margin:8px 0 2px}
+.pill.ok{background:rgba(34,165,90,.14);border-color:rgba(34,165,90,.55);color:var(--ok)}
+.pill.warn{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.55);color:var(--warn)}
+.pill.bad{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.55);color:var(--bad)}
+.banner{border-radius:10px;padding:16px 20px;margin:6px 0 14px;border:1px solid;box-shadow:0 4px 16px rgba(0,0,0,.16)}
+.banner h3{margin:0 0 4px;padding:0;font-size:1.2rem}.banner.ok{background:rgba(34,165,90,.13);border-color:rgba(34,165,90,.6)}.banner.ok h3{color:var(--ok)}
+.banner.bad{background:rgba(239,68,68,.13);border-color:rgba(239,68,68,.65)}.banner.bad h3{color:var(--bad)}.banner ul{margin:6px 0 0 1.1rem;padding:0}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);margin:4px 6px 4px 0;font-size:.92rem}
+.chip b{font-weight:700}.chip i{opacity:.55;font-style:normal}
+.fgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}.fcell{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 12px}
+.callout{border-radius:10px;padding:14px 16px;border:1px solid var(--accent);background:rgba(235,111,70,.10);margin-bottom:10px}
+.receipt{max-width:440px;border:1px dashed var(--line);border-radius:10px;padding:16px 20px;background:var(--card);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88rem}
+.receipt .r{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px dotted var(--line)}.receipt .t{font-weight:800;text-align:center;margin-bottom:6px;letter-spacing:.04em}
+.receipt .s{opacity:.6;font-size:.72rem;text-align:center;margin-top:8px}
+[data-testid="stChatMessage"]{border-radius:12px;border:1px solid var(--line);background:var(--card);padding:10px 14px}
+.stButton>button,.stDownloadButton>button{border-radius:10px;font-weight:600}
 </style>""", unsafe_allow_html=True)
 
 DB = "claims_db.json"  # claim queue, audit trail, photo fingerprints
@@ -36,13 +58,32 @@ def to_jpeg(raw, is_video):
         img = Image.fromarray(fr[:, :, ::-1])
     else: img = Image.open(io.BytesIO(raw)).convert("RGB")
     img.thumbnail((1280, 1280)); b = io.BytesIO(); img.save(b, "JPEG", quality=85); return img, b.getvalue()
-def stat(label, value, cls="mid"): return f'<div class="card"><div class="lbl">{label}</div><div class="{cls}">{value}</div></div>'
 
-# ---------- team settings (sidebar). Customers never need to touch these ----------
+@st.cache_data(show_spinner=False)
+def photo_quality(raw):
+    """Measured (not simulated): sharpness from edge variance, plus exposure from mean brightness."""
+    try:
+        import numpy as np
+        im = Image.open(io.BytesIO(raw)).convert("L"); im.thumbnail((640, 640)); g = np.asarray(im, dtype="float64")
+        lap = 4 * g[1:-1, 1:-1] - g[:-2, 1:-1] - g[2:, 1:-1] - g[1:-1, :-2] - g[1:-1, 2:]
+        sharp = min(100.0, float(lap.var()) / 1.5); m = float(g.mean())
+        expo = 100.0 if 55 <= m <= 205 else max(0.0, 100 - min(abs(m - 55), abs(m - 205)) * 2)
+        return round(0.75 * sharp + 0.25 * expo)
+    except Exception: return None
+
+EM = {"bumper": "\U0001F697", "door": "\U0001F6AA", "mirror": "\U0001FA9E", "headlight": "\U0001F4A1", "fender": "\U0001F699", "bonnet": "\U0001F698", "windshield": "\U0001FA9F", "grille": "\U0001F532", "wheel": "\U0001F6DE", "taillight": "\U0001F526", "boot": "\U0001F9F3"}
+SEVE = {"minor": "\U0001F7E2 Minor", "moderate": "\U0001F7E1 Moderate", "severe": "\U0001F534 Severe"}
+def cell(label, value, cls="val"): return f'<div class="fcell"><div class="lbl">{label}</div><div class="{cls}">{value}</div></div>'
+
+# ---------- secrets and models (backend unchanged) ----------
 PW = os.getenv("ADMIN_PASSWORD", "")
 if "profiles" not in st.session_state:
     st.session_state.profiles = {"Default (from secrets)": None}
-    try:  # models kept in the host's Secrets under [models.<name>]
+    try:  # [ai] table, e.g. type / model_name / base_url / api_key
+        _a = dict(st.secrets["ai"]); _t = _a.get("type", "openai")
+        st.session_state.profiles["Default (from [ai] secret)"] = {"type": "openai" if _t == "openai-compatible" else _t, "model": _a.get("model_name") or _a.get("model", ""), "base_url": _a.get("base_url", ""), "key": _a.get("api_key") or _a.get("key", "")}
+    except Exception: pass
+    try:  # [models.<name>] tables
         for _n, _m in dict(st.secrets.get("models", {})).items(): st.session_state.profiles[_n] = dict(_m)
     except Exception: pass
     if len(st.session_state.profiles) > 1 and not core.env_cfg().get("key") and os.getenv("PROVIDER") != "ollama":
@@ -50,10 +91,13 @@ if "profiles" not in st.session_state:
 rails = {"lo": .75, "hi": .90, "step": .04, "max_rounds": 3, "min_conf": 70, "cap": 25000}
 policy = {"active": True, "limit": 50000, "excess": 1000, "age": 3, "claims": 0}
 with st.sidebar:
-    st.markdown("### Team settings")
-    if PW and not st.session_state.get("is_admin"):
-        if st.text_input("Admin password", type="password") == PW: st.session_state.is_admin = True; st.rerun()
-    is_admin = (not PW) or st.session_state.get("is_admin", False)
+    st.markdown("### Insurer / Admin")
+    admin_on = st.toggle("Insurer / Admin mode", value=False)
+    is_admin = False
+    if admin_on:
+        if PW and not st.session_state.get("is_admin"):
+            if st.text_input("Admin password", type="password") == PW: st.session_state.is_admin = True; st.rerun()
+        is_admin = (not PW) or st.session_state.get("is_admin", False)
     if is_admin:
         with st.expander("Guardrails"):
             rails = {"lo": st.number_input("Offer floor (% of net claim)", 1, 100, 75) / 100, "hi": st.number_input("Offer ceiling (%)", 1, 100, 90) / 100,
@@ -68,19 +112,22 @@ with st.sidebar:
             if st.button("Add model") and pn and pm: st.session_state.profiles[pn] = {"type": "openai" if pt == "openai-compatible" else pt, "model": pm, "base_url": pb, "key": pk}
             active = st.selectbox("Model used for claims", list(st.session_state.profiles))
     else: active = list(st.session_state.profiles)[0]
+    st.caption("Admin mode unlocks settings, the adjuster dashboard, audit trail and model comparison." + (" Protected by a password." if PW else " Set ADMIN_PASSWORD in Secrets to protect it."))
 cfg = st.session_state.profiles[active]
 
-# ---------- header and progress ----------
-st.markdown('<div class="hero"><h1>\U0001F697 Auto-Settle AI</h1><p>Upload a photo of the damage. Get an instant cash offer, or a human review if we are unsure.</p></div>', unsafe_allow_html=True)
+# ---------- header ----------
+st.markdown('<div class="hero"><span class="tag">\u26a1 Instant Touchless FNOL Claims Engine</span><h1>Auto-Settle AI</h1>'
+            '<p>Snap or upload a photo of your vehicle damage. An AI model reads the damage, fixed pricing rules calculate the claim, and you get an instant cash offer, or a human adjuster takes over if anything is uncertain.</p>'
+            '<div class="flow"><span>1 \u00b7 Capture</span><span>2 \u00b7 AI damage assessment</span><span>3 \u00b7 Rule-based pricing</span><span>4 \u00b7 Settle or escalate</span></div></div>', unsafe_allow_html=True)
 c0 = st.session_state.get("claim")
 stage = 0 if not c0 else (2 if c0["status"] == "negotiating" else 3)
-st.markdown('<div class="steps">' + "".join(f'<div class="step {"done" if i < stage else "on" if i == stage else ""}">{n}</div>' for i, n in enumerate(["1 Upload", "2 Assessment", "3 Offer", "4 Decision"])) + "</div>", unsafe_allow_html=True)
+st.markdown('<div class="steps">' + "".join(f'<div class="step {"done" if i < stage else "on" if i == stage else ""}">{n}</div>' for i, n in enumerate(["\u2460 Upload", "\u2461 Assessment", "\u2462 Offer", "\u2463 Decision"])) + "</div>", unsafe_allow_html=True)
 
-names = ["New claim", "How it works"] + (["Adjuster dashboard", "Audit trail", "Compare models"] if is_admin else [])
+names = ["New claim", "Adjuster dashboard", "Audit trail", "Assumptions", "Compare models"] if is_admin else ["New claim", "Assumptions"]
 T = dict(zip(names, st.tabs(names)))
 
 def start_claim(finding, claimed, extra=()):
-    c = core.assess(finding, claimed, policy, rails, extra); st.session_state.claim = c; st.session_state.chat = []; st.session_state.paid = False
+    c = core.assess(finding, claimed, policy, rails, extra); st.session_state.claim = c; st.session_state.chat = []; st.session_state.paid = False; st.session_state.receipt = None
     log("ESTIMATE", f"net={core.inr(c['net'])} range={core.inr(c['lo'])}-{core.inr(c['hi'])} risk={c['risk']}")
     if c["status"] == "escalated": log("DECISION", "ESCALATED: " + "; ".join(c["flags"]))
     else: st.session_state.chat.append(("assistant", core.opening(c))); log("OFFER", f"opening {core.inr(c['offer'])}")
@@ -93,22 +140,29 @@ DEMOS = {"Small dent (instant offer)": ({"part": "bumper", "type": "dent", "seve
 with T["New claim"]:
     L, R = st.columns([1, 1.1], gap="large")
     with L:
-        st.markdown("#### Tell us about the damage")
-        up = st.file_uploader("Photo or short video of the damage", type=["jpg", "jpeg", "png", "webp", "mp4", "mov"])
-        claimed = st.selectbox("Which part is damaged?", list(core.PARTS))
-        go = st.button("Analyse damage", type="primary", disabled=up is None)
-        with st.expander("No photo handy? Try a demo case"):
-            for nm, (fd, cl) in DEMOS.items():
-                if st.button(nm, key="demo_" + nm): start_claim(fd, cl); st.session_state.pop("img", None)
-        with st.expander("AI unavailable? Enter findings manually"):
-            mp = st.multiselect("Damaged parts", list(core.PARTS), ["bumper"]); mt = st.selectbox("Damage type", list(core.TYP)); ms = st.selectbox("Severity", list(core.SEV))
-            mc = st.slider("Confidence %", 0, 100, 85); mq = st.checkbox("Photo is clear", True)
-            if st.button("Use manual findings") and mp:
-                start_claim({"part": mp[0], "type": mt, "severity": ms, "confidence": mc, "quality_ok": mq, "items": [{"part": p, "type": mt, "severity": ms} for p in mp], "notes": "Manually entered findings"}, claimed)
+        with st.container(border=True):
+            st.markdown("#### \u2460 Capture the damage")
+            up = st.file_uploader("Photo or short video of the damage", type=["jpg", "jpeg", "png", "webp", "mp4", "mov"])
+            claimed = st.selectbox("Which part is damaged?", list(core.PARTS))
+            go = st.button("Analyse damage", type="primary", disabled=up is None)
+            with st.expander("No photo handy? Try a demo case"):
+                for nm, (fd, cl) in DEMOS.items():
+                    if st.button(nm, key="demo_" + nm): start_claim(fd, cl); st.session_state.pop("img", None)
+            with st.expander("AI unavailable? Enter findings manually"):
+                mp = st.multiselect("Damaged parts", list(core.PARTS), ["bumper"]); mt = st.selectbox("Damage type", list(core.TYP)); ms = st.selectbox("Severity", list(core.SEV))
+                mc = st.slider("Confidence %", 0, 100, 85); mq = st.checkbox("Photo is clear", True)
+                if st.button("Use manual findings") and mp:
+                    start_claim({"part": mp[0], "type": mt, "severity": ms, "confidence": mc, "quality_ok": mq, "items": [{"part": p, "type": mt, "severity": ms} for p in mp], "notes": "Manually entered findings"}, claimed)
     with R:
-        if up is not None and not up.type.startswith("video"): st.image(up, width=460)
-        elif up is not None: st.video(up)
-        else: st.info("Your photo will appear here once you upload it.")
+        with st.container(border=True):
+            st.markdown("#### Your photo")
+            if up is not None and not up.type.startswith("video"):
+                st.image(up, width=470); q = photo_quality(up.getvalue())
+                if q is not None:
+                    k, t = ("ok", f"\U0001F7E2 Photo quality: Verified & clear ({q}%)") if q >= 75 else ("warn", f"\U0001F7E1 Photo quality: Acceptable ({q}%)") if q >= 50 else ("bad", f"\U0001F534 Blurry / low quality ({q}%). Consider retaking")
+                    st.markdown(f'<span class="pill {k}">{t}</span><div class="lbl" style="margin-top:4px">Measured from sharpness and exposure</div>', unsafe_allow_html=True)
+            elif up is not None: st.video(up)
+            else: st.info("Your photo will appear here once you upload it.")
     if go and up:
         try:
             with st.spinner("Analysing your photo. This usually takes 10 to 20 seconds..."):
@@ -123,30 +177,33 @@ with T["New claim"]:
     c = st.session_state.get("claim")
     if c:
         st.divider()
-        st.markdown(f'<span class="badge {"bad" if c["status"] == "escalated" else "ok"}">{"Sent to a human adjuster" if c["status"] == "escalated" else "Settled" if c["status"] == "settled" else "Eligible for an instant offer"}</span>', unsafe_allow_html=True)
-        cols = st.columns(4 if is_admin else 3)
-        cols[0].markdown(stat("Damage found", ", ".join(i["part"] for i in c["items"])), unsafe_allow_html=True)
-        cols[1].markdown(stat("Net claim value", core.inr(c["net"]), "big"), unsafe_allow_html=True)
-        cols[2].markdown(stat("Cash offer range", f'{core.inr(c["lo"])} to {core.inr(c["hi"])}'), unsafe_allow_html=True)
-        if is_admin: cols[3].markdown(stat("Risk score", f'{c["risk"]}/100'), unsafe_allow_html=True)
-        A, B = st.columns([1, 1.1], gap="large")
+        if c["status"] == "escalated":
+            st.markdown('<div class="banner bad"><h3>\U0001F6A8 Tier-2 Adjuster Review Required</h3><div>This claim could not be decided safely by the system. No offer has been made.</div><ul>' + "".join(f"<li>{E(str(f))}</li>" for f in c["flags"]) + "</ul></div>", unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="banner ok"><h3>\u2705 ' + ("Settled via Straight-Through Processing" if c["status"] == "settled" else "Eligible for Instant Straight-Through Settlement") + '</h3><div>Confidence, policy and fraud checks passed. Offers are set by fixed rules, never by the AI.</div></div>', unsafe_allow_html=True)
+        A, B = st.columns([1.05, 1], gap="large")
         with A:
-            if "img" in st.session_state:
-                im, box = st.session_state.img; im = im.copy()
-                if isinstance(box, list) and len(box) == 4:
-                    w, h = im.size; x, y, bw, bh = box; ImageDraw.Draw(im).rectangle([x*w, y*h, (x+bw)*w, (y+bh)*h], outline="#EB6F46", width=5)
-                st.image(im, caption="Where the AI sees damage", width=420)
-            st.table({"Part": [i["part"] for i in c["items"]], "Damage": [i["type"] for i in c["items"]], "Severity": [i["severity"] for i in c["items"]]})
-            with st.expander("How this was calculated"):
-                st.write(f"Parts{f' (after {c['dep']*100:.0f}% age depreciation)' if c['dep'] else ''}: **{core.inr(c['parts'])}**  \nLabour: **{core.inr(c['labour'])}**  \nGarage repair: **{core.inr(c['gross'])}**  \nPolicy excess: **-{core.inr(min(c['excess'], c['gross']))}**  \nNet claim value: **{core.inr(c['net'])}**")
-                st.caption(f"Estimate band {core.inr(c['band'][0])} to {core.inr(c['band'][1])}. " + c["notes"])
+            with st.container(border=True):
+                st.markdown("#### Damage breakdown")
+                st.markdown("".join(f'<span class="chip">{EM.get(i["part"], "\U0001F527")} <b>{E(str(i["part"]).title())}</b> <i>|</i> {E(str(i["type"]).title())} <i>|</i> {SEVE.get(i["severity"], E(str(i["severity"])))}</span>' for i in c["items"]), unsafe_allow_html=True)
+                st.markdown(f'<div class="lbl" style="margin-top:8px">AI confidence {c["conf"]}%' + (f' \u00b7 Risk score {c["risk"]}/100' if is_admin else "") + "</div>", unsafe_allow_html=True)
+                if "img" in st.session_state:
+                    im, box = st.session_state.img; im = im.copy()
+                    if isinstance(box, list) and len(box) == 4:
+                        w, h = im.size; x, y, bw, bh = box; ImageDraw.Draw(im).rectangle([x*w, y*h, (x+bw)*w, (y+bh)*h], outline="#EB6F46", width=5)
+                    st.image(im, caption="Where the AI sees damage", width=420)
+                if c["notes"]: st.caption(c["notes"])
         with B:
-            if c["status"] == "escalated":
-                st.markdown("#### A person will review your claim")
-                st.write("We could not safely decide this automatically. Reasons:")
-                for f in c["flags"]: st.markdown(f"- \u26a0\ufe0f {f}")
-            else:
-                st.markdown("#### Your settlement offer")
+            with st.container(border=True):
+                st.markdown("#### Financial summary")
+                dep_amt = c["parts"] / (1 - c["dep"]) * c["dep"] if c["dep"] < 1 else 0; ded = min(c["excess"], c["gross"])
+                st.markdown('<div class="fgrid">' + cell("Gross garage repair", core.inr(c["gross"] + dep_amt)) + cell("Depreciation", "\u2212" + core.inr(dep_amt)) + cell("Policy deductible", "\u2212" + core.inr(ded)) + "</div>"
+                            f'<div class="callout"><div class="lbl">Net claim value</div><div class="big">{core.inr(c["net"])}</div></div>'
+                            f'<div class="callout"><div class="lbl">Approved settlement band ({rails["lo"]*100:.0f}% \u2013 {rails["hi"]*100:.0f}%)</div><div class="big">{core.inr(c["lo"])} \u2013 {core.inr(c["hi"])}</div></div>', unsafe_allow_html=True)
+                st.caption(f"Parts {core.inr(c['parts'])} + labour {core.inr(c['labour'])}. Estimate band {core.inr(c['band'][0])} to {core.inr(c['band'][1])}.")
+        if c["status"] != "escalated":
+            with st.container(border=True):
+                st.markdown("#### Settlement conversation")
                 lang = st.radio("Chat language", ["English", "Hindi"], horizontal=True)
                 for r, m in st.session_state.chat: st.chat_message(r).write(m)
                 if c["status"] == "negotiating":
@@ -161,24 +218,37 @@ with T["New claim"]:
                         else: log("OFFER", f"round {c['round']} offer {core.inr(c['offer'])}")
                         st.rerun()
                 elif c["status"] == "settled":
-                    st.success(f"Deal confirmed: {core.inr(c['amount'])}")
-                    if st.session_state.get("paid"): st.success("Payment initiated (simulated). Claim closed.")
+                    rc = st.session_state.get("receipt")
+                    if rc:
+                        st.markdown(f'<div class="receipt"><div class="t">DIGITAL PAYMENT RECEIPT</div><div class="r"><span>Transaction ID</span><span>{rc["id"]}</span></div><div class="r"><span>Timestamp</span><span>{rc["ts"]}</span></div>'
+                                    f'<div class="r"><span>Paid to</span><span>{E(rc["to"])}</span></div><div class="r"><span>Garage estimate</span><span>{core.inr(rc["garage"])}</span></div><div class="r"><span>Saved vs garage estimate</span><span>{core.inr(rc["saved"])}</span></div>'
+                                    f'<div class="r"><span><b>Amount settled</b></span><span><b>{core.inr(rc["amt"])}</b></span></div><div class="s">SIMULATED UPI TRANSFER \u00b7 NO REAL MONEY MOVED</div></div>', unsafe_allow_html=True)
                     else:
+                        st.success(f"Deal confirmed: {core.inr(c['amount'])}")
                         upi = st.text_input("UPI ID for instant payout (simulated)", placeholder="name@bank")
-                        if st.button("Pay now"):
+                        if st.button("Pay now", type="primary"):
                             if re.fullmatch(r"[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}", upi):
                                 d = db_load(); q = next(x for x in d["queue"] if x["id"] == st.session_state.cid)
                                 q.update(state="Auto-settled", detail="SETTLED", paid=c["amount"], saved=c["gross"] - c["amount"]); db_save(d)
-                                log("PAYOUT", f"Simulated UPI transfer of {core.inr(c['amount'])} to **{upi[2:]}"); st.session_state.paid = True; st.balloons(); st.rerun()
+                                log("PAYOUT", f"Simulated UPI transfer of {core.inr(c['amount'])} to **{upi[2:]}"); st.session_state.paid = True
+                                st.session_state.receipt = {"id": "TXN" + hashlib.sha1(f"{st.session_state.cid}{time.time()}".encode()).hexdigest()[:10].upper(), "ts": time.strftime("%d %b %Y, %H:%M:%S"), "to": "**" + upi[2:], "amt": c["amount"], "garage": c["gross"], "saved": c["gross"] - c["amount"]}
+                                st.balloons(); st.rerun()
                             else: st.error("That UPI ID does not look valid.")
 
-with T["How it works"]:
-    st.markdown("#### From photo to payout in four steps")
+with T["Assumptions"]:
+    st.markdown("#### How it works")
     a, b, c_, d_ = st.columns(4)
-    for col, (t, s) in zip([a, b, c_, d_], [("1. Upload", "Send a photo or short video and tell us which part is damaged."), ("2. Assess", "An AI model describes the damage: parts, type and severity."), ("3. Offer", "Fixed rules turn that into a repair cost and a cash offer you can negotiate."), ("4. Decide", "Accept and get paid, or a human adjuster takes over if anything is unclear.")]):
-        col.markdown(f'<div class="card"><div class="mid">{t}</div><div>{s}</div></div>', unsafe_allow_html=True)
+    for col, (t, s) in zip([a, b, c_, d_], [("1. Capture", "Send a photo or short video and name the damaged part."), ("2. Assess", "An AI model describes the damage: parts, type and severity."), ("3. Price", "Fixed rules turn that into a repair cost and a cash offer you can negotiate."), ("4. Decide", "Accept and get paid, or a human adjuster takes over if anything is unclear.")]):
+        col.markdown(f'<div class="card"><div class="val">{t}</div><div>{s}</div></div>', unsafe_allow_html=True)
     st.markdown("**The AI describes; fixed code decides.** The AI never sets an amount, so an offer can never go outside the approved range. Every step is logged.")
-    st.caption("All costs, depreciation and settlement limits shown here are illustrative placeholders. Payments are simulated.")
+    st.markdown("#### Assumptions")
+    st.markdown("""
+- Costs come from a mock parts and labour table with illustrative rupee values and a labour rate of \u20b9500 per hour.
+- Parts lose 5% of value per year of vehicle age, up to 50%; the policy excess is deducted from the claim.
+- The cash settlement band is 75% to 90% of the net claim value, editable by the insurer.
+- Escalation triggers: unusable photo, low AI confidence, severe damage, over-cap or over-limit claims, wrong part claimed, duplicate or old photo, lapsed policy, repeat claims, rule-changing or angry chat messages.
+- Payments are simulated. Photo quality is a measured sharpness and exposure check, not a fraud test.
+- Accuracy of the damage detection has not been measured on a labelled set.""")
 
 if is_admin:
     with T["Adjuster dashboard"]:
