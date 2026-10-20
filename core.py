@@ -11,30 +11,39 @@ RATE = 500  # INR per labour hour (assumption)
 
 def inr(n): return "\u20b9{:,.0f}".format(n)
 
-# ---------- LLM access (Claude API or a local small model via Ollama) ----------
-def ask_llm(prompt, img_jpeg=None):
-    if os.getenv("PROVIDER", "anthropic") == "ollama":   # small language model, runs locally
+# ---------- LLM access: Claude, any OpenAI-compatible API (OpenAI, Gemini, Groq, OpenRouter), or a local Ollama model ----------
+def env_cfg():
+    p = os.getenv("PROVIDER", "anthropic")
+    if p == "openai": return {"type": "openai", "model": os.getenv("OPENAI_MODEL", ""), "base_url": os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"), "key": os.getenv("OPENAI_API_KEY", "")}
+    if p == "ollama": return {"type": "ollama", "model": os.getenv("OLLAMA_MODEL", "qwen2.5vl:7b"), "base_url": os.getenv("OLLAMA_URL", "http://localhost:11434"), "key": ""}
+    return {"type": "anthropic", "model": os.getenv("MODEL", "claude-sonnet-5-5"), "base_url": "", "key": os.getenv("ANTHROPIC_API_KEY", "")}
+
+def ask_llm(prompt, img_jpeg=None, cfg=None):
+    cfg = cfg or env_cfg(); t = cfg["type"]; b64 = base64.b64encode(img_jpeg).decode() if img_jpeg else None
+    if t == "ollama":
         m = {"role": "user", "content": prompt}
-        if img_jpeg: m["images"] = [base64.b64encode(img_jpeg).decode()]
-        r = requests.post(os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat"), timeout=300,
-                          json={"model": os.getenv("OLLAMA_MODEL", "qwen2.5vl:7b"), "messages": [m], "stream": False})
+        if b64: m["images"] = [b64]
+        base = (cfg.get("base_url") or "http://localhost:11434").rstrip("/")
+        if base.endswith("/api/chat"): base = base[:-9]
+        r = requests.post(base + "/api/chat", timeout=300, json={"model": cfg["model"], "messages": [m], "stream": False})
         r.raise_for_status(); return r.json()["message"]["content"]
-    if os.getenv("PROVIDER") == "openai":   # any OpenAI-compatible API: OpenAI, Gemini, Groq, OpenRouter, a local server...
+    if t == "openai":
         content = [{"type": "text", "text": prompt}]
-        if img_jpeg: content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img_jpeg).decode()}})
-        r = requests.post(os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/") + "/chat/completions", timeout=120,
-                          headers={"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"]},
-                          json={"model": os.environ["OPENAI_MODEL"], "messages": [{"role": "user", "content": content}]})
+        if b64: content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64}})
+        r = requests.post((cfg.get("base_url") or "https://api.openai.com/v1").rstrip("/") + "/chat/completions", timeout=120,
+                          headers={"Authorization": "Bearer " + cfg["key"]}, json={"model": cfg["model"], "messages": [{"role": "user", "content": content}]})
         r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
     import anthropic
     content = []
-    if img_jpeg:
-        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                                    "data": base64.b64encode(img_jpeg).decode()}})
+    if b64: content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
     content.append({"type": "text", "text": prompt})
-    r = anthropic.Anthropic().messages.create(model=os.getenv("MODEL", "claude-sonnet-5-5"), max_tokens=700,
-                                              messages=[{"role": "user", "content": content}])
+    r = anthropic.Anthropic(api_key=cfg.get("key") or None).messages.create(model=cfg["model"], max_tokens=700, messages=[{"role": "user", "content": content}])
     return r.content[0].text
+
+def score(found, truth):
+    """Precision and recall of the damaged parts a model found versus the true parts."""
+    f, t = set(found), set(truth); tp = len(f & t)
+    return (round(tp / len(f), 2) if f else 0.0, round(tp / len(t), 2) if t else 0.0)
 
 VISION_PROMPT = ("You are a careful motor-insurance vehicle damage inspector. Examine the WHOLE image systematically, area by area (front bumper, grille, bonnet, both fenders, headlights, doors, mirrors, windshield, wheels and tyres, rear). List EVERY visibly damaged, torn or missing part in items, including partly visible ones, and do not stop at the most obvious damage. Return ONLY JSON: "
   '{"part": one of %s, "type": one of dent|scratch|crack|broken, "severity": one of minor|moderate|severe, '
@@ -42,19 +51,19 @@ VISION_PROMPT = ("You are a careful motor-insurance vehicle damage inspector. Ex
   '"quality_ok": false if blurry, dark, cropped or not a vehicle, "box": [x,y,width,height] fractions 0-1 around the worst damage, '
   '"notes": one short sentence}. The top-level part/type/severity describe the worst damage.') % "|".join(PARTS)
 
-def analyse_image(jpeg):
+def analyse_image(jpeg, cfg=None):
     def pj(t): return json.loads(re.search(r"\{.*\}", t, re.S).group(0))
-    r = pj(ask_llm(VISION_PROMPT, jpeg))
+    r = pj(ask_llm(VISION_PROMPT, jpeg, cfg))
     try:  # second pass: ask the model to look again for missed parts
         r2 = pj(ask_llm("Earlier you listed these damaged parts: " + json.dumps(r.get("items") or [r]) + ". Look at the image again, area by area. "
-                        'Return ONLY JSON {"items":[every damaged part including any you missed, each {"part","type","severity"}]}. Allowed parts: ' + "|".join(PARTS), jpeg))
+                        'Return ONLY JSON {"items":[every damaged part including any you missed, each {"part","type","severity"}]}. Allowed parts: ' + "|".join(PARTS), jpeg, cfg))
         old = {i.get("part") for i in (r.get("items") or [r])}
         if len(r2.get("items", [])) >= len(old): r["added"] = len({i.get("part") for i in r2["items"]} - old); r["items"] = r2["items"]
     except Exception: pass
     return r
 
-def translate_hi(text):
-    try: return ask_llm("Translate to Hindi (Devanagari). Keep every rupee amount and digit unchanged. Output only the translation: " + text).strip()
+def translate_hi(text, cfg=None):
+    try: return ask_llm("Translate to Hindi (Devanagari). Keep every rupee amount and digit unchanged. Output only the translation: " + text, cfg=cfg).strip()
     except Exception: return text
 
 # ---------- estimate, flags, risk ----------
