@@ -19,7 +19,7 @@ def env_cfg():
     return {"type": "anthropic", "model": os.getenv("MODEL", "claude-sonnet-5-5"), "base_url": "", "key": os.getenv("ANTHROPIC_API_KEY", "")}
 
 def ask_llm(prompt, img_jpeg=None, cfg=None):
-    cfg = cfg or env_cfg(); t = cfg["type"]; b64 = base64.b64encode(img_jpeg).decode() if img_jpeg else None
+    cfg = cfg or env_cfg(); t = "openai" if cfg["type"] == "openai-compatible" else cfg["type"]; b64 = base64.b64encode(img_jpeg).decode() if img_jpeg else None
     if t == "ollama":
         m = {"role": "user", "content": prompt}
         if b64: m["images"] = [b64]
