@@ -7,3 +7,11 @@ textColor = "#2B1A17"
 
 [client]
 toolbarMode = "viewer"
+
+[theme]
+base = "dark"
+primaryColor = "#EB6F46"
+backgroundColor = "#0B1220"
+secondaryBackgroundColor = "#131C2E"
+textColor = "#E6EAF0"
+
