@@ -37,9 +37,17 @@ with st.sidebar:
     policy = {"active": st.selectbox("Status", ["Active", "Lapsed"]) == "Active", "limit": st.number_input("Max claim limit (\u20b9)", 0, 1000000, 50000),
               "excess": st.number_input("Policy excess (\u20b9)", 0, 100000, 1000), "age": st.number_input("Vehicle age (years)", 0, 30, 3),
               "claims": st.number_input("Claims in last 12 months", 0, 20, 0)}
-    st.caption(f"Model backend: {os.getenv('PROVIDER', 'anthropic')}")
+    st.header("AI models")
+    if "profiles" not in st.session_state: st.session_state.profiles = {"Default (from secrets)": None}
+    with st.expander("Add a model to try"):
+        pn = st.text_input("Name (your label)", key="pn"); pt = st.selectbox("Type", ["openai-compatible", "anthropic", "ollama"], key="pt")
+        pm = st.text_input("Model name (must support images)", key="pm"); pb = st.text_input("Base URL (not needed for anthropic)", key="pb")
+        pk = st.text_input("API key (kept only in this session)", type="password", key="pk")
+        if st.button("Add model") and pn and pm:
+            st.session_state.profiles[pn] = {"type": "openai" if pt == "openai-compatible" else pt, "model": pm, "base_url": pb, "key": pk}
+    active = st.selectbox("Model used for claims", list(st.session_state.profiles)); cfg = st.session_state.profiles[active]
 
-t1, t2, t3, t4 = st.tabs(["New claim", "Adjuster dashboard", "Audit trail", "Assumptions"])
+t1, t2, t3, t4, t5 = st.tabs(["New claim", "Adjuster dashboard", "Audit trail", "Assumptions", "Compare models"])
 
 with t1:
     st.title("Auto-Settle AI")
@@ -57,7 +65,7 @@ with t1:
             h = hashlib.sha256(jpeg).hexdigest(); d = db_load()
             if h in d["hashes"]: extra.append("Duplicate photo: this image was already submitted")
             else: d["hashes"].append(h); db_save(d)
-            finding = core.analyse_image(jpeg); log("AI_VISION", json.dumps(finding))
+            finding = core.analyse_image(jpeg, cfg); log("AI_VISION", json.dumps(finding))
             st.session_state.img = (img, finding.get("box"))
         except Exception as e: st.error(f"AI step failed: {e}. Use the manual option."); log("AI_ERROR", str(e))
     if manual and mp:
@@ -102,7 +110,7 @@ with t1:
                     if msg:
                         st.session_state.chat.append(("user", msg)); log("CUSTOMER", msg)
                         rep = core.negotiate(c, msg, rails)
-                        st.session_state.chat.append(("assistant", core.translate_hi(rep) if lang == "Hindi" else rep))
+                        st.session_state.chat.append(("assistant", core.translate_hi(rep, cfg) if lang == "Hindi" else rep))
                         if c["status"] == "settled": log("DECISION", f"SETTLED at {core.inr(c['amount'])}")
                         elif c["status"] == "escalated": log("DECISION", "ESCALATED: " + c["flags"][-1])
                         else: log("OFFER", f"round {c['round']} offer {core.inr(c['offer'])}")
@@ -144,3 +152,27 @@ with t4:
 - **Model choice:** set PROVIDER=ollama to run a small local vision model (under 20B parameters) instead of the Claude API.
 - **Not covered:** vehicle market value, fraud history across customers, real payment integration.
 """)
+
+with t5:
+    import pandas as pd
+    st.subheader("Compare AI models on the same photo")
+    st.caption("Add models in the sidebar, upload a test photo, tick the parts that are truly damaged, and run. Repeat with several photos, then read the averages.")
+    cu = st.file_uploader("Test photo", type=["jpg", "jpeg", "png", "webp"], key="cmpu")
+    truth = st.multiselect("Parts that are truly damaged (enables accuracy scores)", list(core.PARTS))
+    chosen = st.multiselect("Models to compare", list(st.session_state.profiles), default=list(st.session_state.profiles)[:1])
+    if "cmp" not in st.session_state: st.session_state.cmp = []
+    if st.button("Run comparison", disabled=not (cu and chosen)):
+        _, jpeg = to_jpeg(cu.getvalue(), False)
+        for m in chosen:
+            t0 = time.time()
+            try:
+                r = core.analyse_image(jpeg, st.session_state.profiles[m]); dt = round(time.time() - t0, 1)
+                found = sorted({i.get("part") for i in (r.get("items") or [r])})
+                row = {"Photo": cu.name, "Model": m, "Time (s)": dt, "Parts found": ", ".join(map(str, found)), "Worst severity": r.get("severity"), "Self-reported confidence": r.get("confidence")}
+                if truth: row["Precision"], row["Recall"] = core.score(found, truth)
+            except Exception as e: row = {"Photo": cu.name, "Model": m, "Time (s)": round(time.time() - t0, 1), "Parts found": "ERROR: " + str(e)[:150]}
+            st.session_state.cmp.append(row)
+    if st.session_state.cmp:
+        df = pd.DataFrame(st.session_state.cmp); st.dataframe(df, width="stretch")
+        if "Recall" in df: st.write("**Average per model** (higher recall = misses fewer damaged parts; higher precision = invents fewer):"); st.dataframe(df.dropna(subset=["Recall"]).groupby("Model")[["Precision", "Recall", "Time (s)"]].mean().round(2), width="stretch")
+        if st.button("Clear comparison results"): st.session_state.cmp = []; st.rerun()
