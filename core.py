@@ -53,7 +53,15 @@ VISION_PROMPT = ("You are a careful motor-insurance vehicle damage inspector. Ex
   '"notes": one short sentence}. The top-level part/type/severity describe the worst damage.') % "|".join(PARTS)
 
 def analyse_image(jpeg, cfg=None):
-    def pj(t): return json.loads(re.search(r"\{.*\}", t, re.S).group(0))
+    def pj(t):
+        m = re.search(r"\{.*\}", t, re.S)
+        if not m: raise ValueError("No JSON object found in model response")
+        raw = m.group(0)
+        # Fix common LLM JSON issues: trailing commas, single quotes, unquoted keys
+        raw = re.sub(r",\s*([}\]])", r"\1", raw)          # remove trailing commas
+        raw = raw.replace("'", '"')                        # single -> double quotes
+        raw = re.sub(r'(?<=\{|,)\s*(\w+)\s*:', r' "\1":', raw)  # unquoted keys
+        return json.loads(raw)
     r = pj(ask_llm(VISION_PROMPT, jpeg, cfg))
     try:  # second pass: ask the model to look again for missed parts
         r2 = pj(ask_llm("Earlier you listed these damaged parts: " + json.dumps(r.get("items") or [r]) + ". Look at the image again, area by area. "
