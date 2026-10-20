@@ -28,13 +28,12 @@ def ask_llm(prompt, img_jpeg=None, cfg=None):
         r = requests.post(base + "/api/chat", timeout=300, json={"model": cfg["model"], "messages": [m], "stream": False})
         r.raise_for_status(); return r.json()["message"]["content"]
     if t == "openai":
+        from openai import OpenAI
         content = [{"type": "text", "text": prompt}]
         if b64: content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64}})
-        base = (cfg.get("base_url") or "https://api.openai.com/v1").rstrip("/")
-        url = base + "/chat/completions"
-        r = requests.post(url, timeout=120,
-                          headers={"Authorization": "Bearer " + cfg["key"]}, json={"model": cfg["model"], "messages": [{"role": "user", "content": content}]})
-        r.raise_for_status(); return r.json()["choices"][0]["message"]["content"]
+        client = OpenAI(api_key=cfg["key"], base_url=(cfg.get("base_url") or "https://api.openai.com/v1"))
+        r = client.chat.completions.create(model=cfg["model"], messages=[{"role": "user", "content": content}], max_tokens=700, timeout=120)
+        return r.choices[0].message.content
     import anthropic
     content = []
     if b64: content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})

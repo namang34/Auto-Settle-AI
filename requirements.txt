@@ -1,5 +1,6 @@
 streamlit
 anthropic
+openai
 requests
 pillow
 opencv-python-headless
