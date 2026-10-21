@@ -132,6 +132,17 @@ def annotate(im, items, fallback_box=None):
         x, y, bw, bh = fallback_box; d.rectangle([x * w, y * h, min(w - 1, (x + bw) * w), min(h - 1, (y + bh) * h)], outline="#EB6F46", width=lw + 1)
     return im, n
 
+def friendly_error(e):
+    """Turn a raw exception into a one-line reason the user can act on."""
+    s = str(e).lower()
+    if "json" in s or "expecting" in s or "delimiter" in s: return "The AI's reply could not be read (it may have been cut off)."
+    if any(k in s for k in ("api key", "api_key", "authentication", "unauthorized", "401", "403", "permission", "invalid x-api-key")): return "The AI service rejected the request. Check the API key and model name in the app's Secrets."
+    if "429" in s or "quota" in s or "rate limit" in s or "resource_exhausted" in s or "overloaded" in s: return "The AI service is busy or out of quota. Wait a minute and try again."
+    if "404" in s or "model" in s and ("not found" in s or "does not exist" in s): return "The AI model name was not found. Check the model name in the app's Secrets."
+    if "timed out" in s or "timeout" in s or "connection" in s or "name resolution" in s: return "Could not reach the AI service. Check the connection and try again."
+    if "video" in s or "cv2" in s or "opencv" in s: return "Could not read that video. Try a photo instead."
+    return "We could not analyse that photo."
+
 def part_table(c):
     """Per-part estimate table: where every rupee of the repair estimate comes from."""
     g = c["gross"] or 1; rows = ""
@@ -281,7 +292,7 @@ with T["New claim"]:
                 finding = core.analyse_image(jpeg, cfg); log("AI_VISION", json.dumps(finding))
             st.session_state.img = (img, finding.get("box")); start_claim(finding, claimed, extra)
         except Exception as e:
-            st.error("We could not analyse that photo. Please try another photo, or use the manual option."); log("AI_ERROR", str(e))
+            st.error(friendly_error(e) + " You can also try another photo, or use the manual option."); log("AI_ERROR", str(e))
             with st.expander("Technical details"): st.code(str(e))
     c = st.session_state.get("claim")
     if c:

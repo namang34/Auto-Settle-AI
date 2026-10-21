@@ -142,3 +142,40 @@ def test_boxes_pass_through_assess_and_bad_boxes_are_dropped():
                        {"part": "door", "type": "dent", "severity": "minor", "box": [5, 5, 5, 5]}])
     c = core.assess(f, "bumper", POLICY, RAILS)
     assert c["items"][0]["box"] == [0.1, 0.5, 0.4, 0.2] and c["items"][1]["box"] is None
+
+
+# ---------- robustness against odd model replies ----------
+def _jpeg():
+    import io
+    from PIL import Image
+    b = io.BytesIO(); Image.new("RGB", (64, 64)).save(b, "JPEG"); return b.getvalue()
+
+
+def _good(**kw):
+    import json
+    return json.dumps({"part": "bumper", "type": "dent", "severity": "minor", "confidence": 90, "quality_ok": True,
+                       "items": [{"part": "bumper", "type": "dent", "severity": "minor"}], **kw})
+
+
+@pytest.mark.parametrize("bad_first", ["", '{"part": "bumper", "items": [{"part": "bum', "I cannot help with that"])
+def test_analyse_image_retries_once_on_empty_or_truncated_reply(monkeypatch, bad_first):
+    replies = iter([bad_first, _good(), _good()])          # 1st vision call bad, retry good, 2nd-pass good
+    monkeypatch.setattr(core, "ask_llm", lambda prompt, img=None, cfg=None: next(replies))
+    f = core.analyse_image(_jpeg())
+    assert core.assess(f, "bumper", POLICY, RAILS)["items"][0]["part"] == "bumper"
+
+
+def test_analyse_image_gives_up_after_one_retry(monkeypatch):
+    monkeypatch.setattr(core, "ask_llm", lambda prompt, img=None, cfg=None: "")
+    with pytest.raises(ValueError): core.analyse_image(_jpeg())
+
+
+@pytest.mark.parametrize("items", ["bumper", [None, {"part": "bumper", "type": "dent", "severity": "minor"}], [1, 2], {"part": "bumper"}, []])
+def test_malformed_items_do_not_crash_assess(items):
+    f = {"part": "bumper", "type": "dent", "severity": "minor", "confidence": 90, "quality_ok": True, "items": items}
+    c = core.assess(f, "bumper", POLICY, RAILS)
+    assert c["items"] and all(isinstance(i, dict) for i in c["items"])
+
+
+def test_token_budget_is_generous():
+    assert core.MAX_TOKENS >= 2000

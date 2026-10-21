@@ -7,6 +7,7 @@ PARTS = {"bumper": (6500, 3), "door": (9000, 4), "mirror": (3500, 1), "headlight
          "grille": (3000, 1), "wheel": (6000, 1.5), "taillight": (4000, 1), "boot": (9500, 3.5)}  # (parts cost INR, labour hours) - mock reference data
 SEV = {"minor": .25, "moderate": .6, "severe": 1.0}
 TYP = {"scratch": .5, "dent": .8, "crack": 1.0, "broken": 1.2}
+MAX_TOKENS = 2500   # generous: thinking models spend part of this budget before answering
 RATE = 500  # INR per labour hour (assumption)
 
 def inr(n): return "\u20b9{:,.0f}".format(n)
@@ -32,13 +33,13 @@ def ask_llm(prompt, img_jpeg=None, cfg=None):
         content = [{"type": "text", "text": prompt}]
         if b64: content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64}})
         client = OpenAI(api_key=cfg["key"], base_url=(cfg.get("base_url") or "https://api.openai.com/v1"))
-        r = client.chat.completions.create(model=cfg["model"], messages=[{"role": "user", "content": content}], max_tokens=700, timeout=120)
+        r = client.chat.completions.create(model=cfg["model"], messages=[{"role": "user", "content": content}], max_tokens=MAX_TOKENS, timeout=120)
         return r.choices[0].message.content
     import anthropic
     content = []
     if b64: content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
     content.append({"type": "text", "text": prompt})
-    r = anthropic.Anthropic(api_key=cfg.get("key") or None).messages.create(model=cfg["model"], max_tokens=700, messages=[{"role": "user", "content": content}])
+    r = anthropic.Anthropic(api_key=cfg.get("key") or None).messages.create(model=cfg["model"], max_tokens=MAX_TOKENS, messages=[{"role": "user", "content": content}])
     return r.content[0].text
 
 def score(found, truth):
@@ -51,6 +52,13 @@ VISION_PROMPT = ("You are a careful motor-insurance vehicle damage inspector. Ex
   '"items": [{"part","type","severity","box": [x,y,width,height] fractions 0-1 tightly around THAT part} for EVERY damaged part], "confidence": 0-100 integer, '
   '"quality_ok": false if blurry, dark, cropped or not a vehicle, "box": [x,y,width,height] fractions 0-1 around the worst damage, '
   '"notes": one short sentence}. The top-level part/type/severity describe the worst damage.') % "|".join(PARTS)
+
+def _items(f):
+    """The model's damaged-part list, cleaned: only dict entries; falls back to the top-level finding."""
+    its = f.get("items")
+    if isinstance(its, dict): its = [its]
+    its = [i for i in its if isinstance(i, dict)] if isinstance(its, list) else []
+    return its or [f]
 
 def valid_box(b):
     """A box is [x, y, width, height] as fractions of the image, inside the frame."""
@@ -72,20 +80,23 @@ def analyse_image(jpeg, cfg=None):
         raw = raw.replace("'", '"')                       # last resort: single quotes
         raw = re.sub(r'(?<=\{|,)\s*(\w+)\s*:', r' "\1":', raw)  # unquoted keys
         return json.loads(raw)
-    r = pj(ask_llm(VISION_PROMPT, jpeg, cfg))
+    try: r = pj(ask_llm(VISION_PROMPT, jpeg, cfg))
+    except ValueError:      # empty, truncated or non-JSON reply (JSONDecodeError is a ValueError): ask once more, strictly
+        r = pj(ask_llm(VISION_PROMPT + " IMPORTANT: reply with ONE compact JSON object only. No markdown, no commentary.", jpeg, cfg))
     try:  # second pass: ask the model to look again for missed parts
-        r2 = pj(ask_llm("Earlier you listed these damaged parts: " + json.dumps(r.get("items") or [r]) + ". Look at the image again, area by area. "
+        r2 = pj(ask_llm("Earlier you listed these damaged parts: " + json.dumps(_items(r)) + ". Look at the image again, area by area. "
                         'Return ONLY JSON {"items":[every damaged part including any you missed, each {"part","type","severity","box":[x,y,width,height] fractions 0-1 tightly around that part}]}. Allowed parts: ' + "|".join(PARTS), jpeg, cfg))
-        first = r.get("items") or [r]
+        first = _items(r)
+        second = _items(r2) if r2.get("items") else []
         old = {i.get("part") for i in first}
-        if len(r2.get("items", [])) >= len(old):
-            r["added"] = len({i.get("part") for i in r2["items"]} - old)
-            for i in r2["items"]:                                   # keep a box if the second pass dropped it
+        if second and len(second) >= len(old):
+            r["added"] = len({i.get("part") for i in second} - old)
+            for i in second:                                   # keep a box if the second pass dropped it
                 if not valid_box(i.get("box")):
                     prev = next((p for p in first if p.get("part") == i.get("part") and valid_box(p.get("box"))), None)
                     if prev: i["box"] = prev["box"]
                     elif i.get("part") == r.get("part") and valid_box(r.get("box")): i["box"] = r["box"]
-            r["items"] = r2["items"]
+            r["items"] = second
     except Exception: pass
     return r
 
@@ -100,7 +111,7 @@ def _num(v, default=0.0):
     except Exception: return default
 
 def assess(f, claimed, policy, rails, extra_flags=()):
-    raw_items = f.get("items") or [f]
+    raw_items = _items(f)
     unknown = sorted({str(i.get("part")) for i in raw_items if i.get("part") not in PARTS})   # parts we cannot price
     items = [{"part": i.get("part") if i.get("part") in PARTS else "bumper", "type": i.get("type"), "severity": i.get("severity"),
               "box": [float(v) for v in i["box"]] if valid_box(i.get("box")) else None} for i in raw_items]
