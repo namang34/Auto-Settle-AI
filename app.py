@@ -158,6 +158,25 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.top-nav-anchor){
 .sbar-fill.instant{background:var(--ok)}
 .sbar-val{width:215px;text-align:right;font-size:.82rem;font-weight:700}
 .savings-note{font-size:.78rem;opacity:.75;margin-top:10px;line-height:1.5}
+/* Google Pay / PhonePe-Grade Payout Card */
+.gpay-card{background:linear-gradient(145deg,rgba(34,165,90,0.12) 0%,rgba(15,23,42,0.92) 100%);border:1.5px solid rgba(34,165,90,0.50);border-radius:20px;padding:30px 24px;max-width:520px;margin:16px auto;text-align:center;box-shadow:0 16px 40px rgba(0,0,0,0.4),0 0 24px rgba(34,165,90,0.18);position:relative;overflow:hidden}
+.gpay-card::before{content:"";position:absolute;top:-60px;left:50%;transform:translateX(-50%);width:180px;height:180px;background:radial-gradient(circle,rgba(34,165,90,0.4) 0%,transparent 70%);pointer-events:none}
+.gpay-check-wrap{width:70px;height:70px;margin:0 auto 14px;display:flex;align-items:center;justify-content:center}
+.gpay-check-svg{width:70px;height:70px;border-radius:50%;display:block;stroke-width:3.5;stroke:#22A55A;stroke-miterlimit:10;box-shadow:0 0 22px rgba(34,165,90,0.45);animation:gpayScale 0.4s ease-in-out}
+.gpay-circle{stroke-dasharray:166;stroke-dashoffset:166;stroke-width:3.5;stroke:#22A55A;fill:rgba(34,165,90,0.18);animation:gpayStroke 0.6s cubic-bezier(0.65,0,0.45,1) forwards}
+.gpay-check{transform-origin:50% 50%;stroke-dasharray:48;stroke-dashoffset:48;stroke-width:4;stroke:#ffffff;animation:gpayStroke 0.35s cubic-bezier(0.65,0,0.45,1) 0.5s forwards}
+@keyframes gpayStroke{100%{stroke-dashoffset:0}}
+@keyframes gpayScale{0%,100%{transform:none}50%{transform:scale3d(1.1,1.1,1)}}
+.gpay-status-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:999px;background:rgba(34,165,90,0.18);border:1px solid rgba(34,165,90,0.45);color:#22A55A;font-size:0.72rem;font-weight:800;letter-spacing:0.07em;text-transform:uppercase;margin-bottom:8px}
+.gpay-amount{font-size:2.8rem;font-weight:800;color:#ffffff;line-height:1.1;margin:4px 0 6px;letter-spacing:-0.02em}
+.gpay-sub{font-size:0.92rem;opacity:0.85;margin-bottom:16px}
+.gpay-sub b{color:#22A55A;font-family:ui-monospace,monospace}
+.gpay-divider{height:1px;background:repeating-linear-gradient(90deg,rgba(128,128,128,0.3) 0 8px,transparent 8px 14px);margin:18px 0}
+.gpay-details-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;background:rgba(0,0,0,0.25);border-radius:14px;padding:16px;border:1px solid rgba(255,255,255,0.08)}
+.gpay-col{display:flex;flex-direction:column;gap:3px}
+.gpay-label{font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;opacity:0.6;font-weight:600}
+.gpay-val{font-size:0.86rem;font-weight:700;font-family:ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpay-badge-footer{margin-top:16px;font-size:0.72rem;opacity:0.65;letter-spacing:0.03em}
 .upi-success{background:rgba(34,165,90,.1);border:1.5px solid var(--ok);border-radius:12px;padding:16px;margin:12px 0;text-align:center}
 .upi-success h3{color:var(--ok);margin:4px 0 6px;font-size:1.3rem}
 </style>""", unsafe_allow_html=True)
@@ -601,17 +620,43 @@ with T["New claim"]:
                 rc = st.session_state.get("receipt")
                 if rc:
                     st.markdown(f"""
-<div class="upi-success">
-  <div style="font-size:2.2rem;line-height:1">✅</div>
-  <h3>{T_("Payment Successful · Transferred via Instant UPI", "भुगतान सफल · तुरंत UPI द्वारा स्थानांतरित")}</h3>
-  <div style="font-size:1.5rem;font-weight:800;color:var(--ok);margin:4px 0">{core.inr(rc['amt'])}</div>
-  <div style="font-size:.85rem;opacity:.85">{T_("Credited to", "खाता धारक:")} <b>{E(rc['to'])}</b> &nbsp;·&nbsp; IMPS Ref: <b>{rc['id']}</b></div>
-  <div style="font-size:.78rem;opacity:.65;margin-top:4px">{rc['ts']} &nbsp;·&nbsp; {T_("Touchless STP Settlement: 42s", "त्वरित निपटान समय: 42 सेकंड")}</div>
+<div class="gpay-card">
+  <div class="gpay-check-wrap">
+    <svg class="gpay-check-svg" viewBox="0 0 52 52">
+      <circle class="gpay-circle" cx="26" cy="26" r="24"/>
+      <path class="gpay-check" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+    </svg>
+  </div>
+  <div class="gpay-status-badge">● {T_("INSTANT UPI SETTLEMENT SUCCESS", "त्वरित UPI निपटान सफल")}</div>
+  <div class="gpay-amount">{core.inr(rc['amt'])}</div>
+  <div class="gpay-sub">{T_("Transferred to", "प्राप्तकर्ता:")} <b>{E(rc['to'])}</b></div>
+  
+  <div class="gpay-divider"></div>
+  
+  <div class="gpay-details-grid">
+    <div class="gpay-col">
+      <span class="gpay-label">{T_("TRANSACTION REF", "लेन-देन संदर्भ")}</span>
+      <span class="gpay-val">{rc['id']}</span>
+    </div>
+    <div class="gpay-col">
+      <span class="gpay-label">{T_("SETTLEMENT SPEED", "निपटान गति")}</span>
+      <span class="gpay-val" style="color:var(--ok)">⚡ {T_("42 Seconds", "42 सेकंड")}</span>
+    </div>
+    <div class="gpay-col">
+      <span class="gpay-label">{T_("CLAIM FILE ID", "दावा संदर्भ")}</span>
+      <span class="gpay-val">{st.session_state.get('cid', 'C1')}</span>
+    </div>
+    <div class="gpay-col">
+      <span class="gpay-label">{T_("ADMIN SAVINGS", "प्रशासनिक बचत")}</span>
+      <span class="gpay-val" style="color:var(--ok)">{core.inr(rc['saved'])}</span>
+    </div>
+  </div>
+  
+  <div class="gpay-badge-footer">
+    <span>🛡️ {T_("IRDAI Minor Motor Claims Compliant", "आईआरडीएआई मोटर दावा दिशानिर्देश अनुरूप")}</span> &nbsp;·&nbsp; <span>{T_("Zero Workshop Downtime", "शून्य गैराज प्रतीक्षा")}</span>
+  </div>
 </div>
 """, unsafe_allow_html=True)
-                    st.markdown(f'<div class="receipt"><div class="t">DIGITAL MOTOR CLAIMS SETTLEMENT RECEIPT</div><div class="r"><span>Transaction ID</span><span>{rc["id"]}</span></div><div class="r"><span>Timestamp</span><span>{rc["ts"]}</span></div>'
-                                f'<div class="r"><span>Paid To (UPI)</span><span>{E(rc["to"])}</span></div><div class="r"><span>Gross Garage Repair</span><span>{core.inr(rc["garage"])}</span></div><div class="r"><span>Insurer Admin Savings</span><span>{core.inr(rc["saved"])}</span></div>'
-                                f'<div class="r"><span><b>Final Settled Payout</b></span><span><b>{core.inr(rc["amt"])}</b></span></div><div class="s">IRDAI MOTOR CLAIMS COMPLIANT · SIMULATED UPI TRANSFER</div></div>', unsafe_allow_html=True)
                     receipt_txt = f"""====================================================
            AUTO-SETTLE AI · CLAIMS SETTLEMENT RECEIPT
 ====================================================
@@ -633,16 +678,26 @@ FINAL CASH SETTLEMENT : {core.inr(rc['amt'])}
 This is an electronically generated insurance settlement 
 voucher compliant with IRDAI minor motor claim guidelines.
 ===================================================="""
-                    st.download_button(
-                        label=T_("📥 Download Official Settlement Receipt", "📥 आधिकारिक निपटान रसीद डाउनलोड करें"),
-                        data=receipt_txt,
-                        file_name=f"AutoSettle_Receipt_{st.session_state.get('cid', 'C1')}.txt",
-                        mime="text/plain",
-                        type="primary"
-                    )
+                    _c_dl, _c_rst = st.columns([1.4, 1])
+                    with _c_dl:
+                        st.download_button(
+                            label=T_("📥 Download Official Settlement Receipt", "📥 आधिकारिक निपटान रसीद डाउनलोड करें"),
+                            data=receipt_txt,
+                            file_name=f"AutoSettle_Receipt_{st.session_state.get('cid', 'C1')}.txt",
+                            mime="text/plain",
+                            type="primary",
+                            use_container_width=True
+                        )
+                    with _c_rst:
+                        if st.button(T_("🔄 Run Next Claim Demo", "🔄 अगला दावा डेमो चलाएं"), type="secondary", use_container_width=True):
+                            st.session_state.claim = None
+                            st.session_state.pop("receipt", None)
+                            st.session_state.pop("img", None)
+                            st.session_state.pop("sample_active", None)
+                            st.rerun()
                 else:
                     st.success(f"Deal confirmed: {core.inr(c['amount'])}")
-                    upi = st.text_input("UPI ID for instant payout (simulated)", placeholder="name@bank")
+                    upi = st.text_input("UPI ID for instant payout (simulated)", value="rahul.demo@okhdfcbank")
                     if st.button("Disburse payment via UPI", type="primary"):
                         if re.fullmatch(r"[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}", upi):
                             d = db_load(); q = next((x for x in d["queue"] if x["id"] == st.session_state.cid), None)
@@ -661,7 +716,7 @@ voucher compliant with IRDAI minor motor claim guidelines.
 - **{T_("Zero garage downtime:", "गैराज प्रतीक्षा शून्य:")}** {T_("Fix on your own schedule or keep the cash", "अपनी सुविधानुसार मरम्मत करवाएं या नकद रखें")}
 - **{T_("100% paperless:", "100% पेपरलेस:")}** {T_("Straight-through approval in under 60 seconds", "60 सेकंड से कम में स्वचालित स्वीकृति")}
                         """)
-                        upi_in = st.text_input(T_("Enter UPI ID for instant credit", "तुरंत भुगतान के लिए UPI ID दर्ज करें"), placeholder="e.g. yourname@okhdfcbank", key="instant_upi")
+                        upi_in = st.text_input(T_("Enter UPI ID for instant credit", "तुरंत भुगतान के लिए UPI ID दर्ज करें"), value="rahul.demo@okhdfcbank", key="instant_upi")
                         if st.button(f"⚡ {T_('Accept', 'स्वीकार करें')} {core.inr(c['offer'])} & {T_('Disburse Now', 'तुरंत भुगतान लें')}", type="primary", use_container_width=True):
                             if re.fullmatch(r"[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}", upi_in.strip()):
                                 c["status"], c["amount"] = "settled", c["offer"]
