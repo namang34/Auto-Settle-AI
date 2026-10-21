@@ -63,31 +63,39 @@ Automatic escalation to human surveyors triggers instantly upon:
 
 ```mermaid
 flowchart TD
-    subgraph Intake["1. First Notice of Loss (FNOL)"]
-        A["Claimant Uploads Photo"] --> B{"CV Quality Check"}
-        B -->|Blurry or Dark| B1["Prompt Re-take"]
-        B -->|Verified Clear| C["SHA-256 Hash Check"]
-        C -->|Duplicate Found| D["Flag: Duplicate Claim"]
-    end
+    A[1. Photo Upload] --> B{Clear Photo?}
+    B -->|No| B1[Prompt Retake]
+    B -->|Yes| C[2. AI Vision Scan]
+    C --> D[Identify Damage & Severity]
+    D --> E[3. Fixed Pricing Rules]
+    E --> F{Guardrails Pass?}
+    F -->|No: Severe or Low Conf| G[Adjuster Review Queue]
+    F -->|Yes: Approved STP| H[4. Instant Cash Offer]
+    H --> I[Claimant Accepts & Adds UPI]
+    I --> J[5. Instant UPI Payout <60s]
+    G --> K[Adjuster Workbench Override]
+```
 
-    subgraph Vision["2. Vision & Damage Localization"]
-        C -->|Original Image| E["AI Vision: Gemini / Groq / OpenRouter"]
-        E --> F["Extract Part, Type, Severity & Bounding Box"]
-    end
-
-    subgraph Valuation["3. Deterministic Rules & Guardrails"]
-        F --> G["Fixed Business Pricing Engine"]
-        G --> H["Compute: Parts + Labor - Depreciation - Deductible"]
-        H --> I{"10 Underwriter Guardrails"}
-        I -->|Severe / Low Conf / Over Cap| J["Tier-2 Adjuster Escalation"]
-        I -->|Passed All Guardrails| K["Pre-Approved Cash Offer (75%-90%)"]
-    end
-
-    subgraph Payout["4. Instant Settlement & Payout"]
-        K --> L["Claimant Accepts & Enters UPI ID"]
-        L --> M["Instant IMPS/UPI Payout & IRDAI Receipt"]
-        J --> N["Adjuster Workbench: Approve or Reject"]
-    end
+```text
+  [ 1. Photo Upload ]
+          │
+          ▼
+    { Clear Photo? } ──(No)──▶ [ Prompt Retake ]
+          │ (Yes)
+          ▼
+  [ 2. AI Vision Scan ] (Identifies damaged panels & severity)
+          │
+          ▼
+  [ 3. Pricing Rules ] (Parts table + labor - depreciation - excess)
+          │
+          ▼
+  { Guardrails Pass? } ──(Severe / Low Conf)──▶ [ Adjuster Review Queue ]
+          │ (Approved STP)                             │
+          ▼                                            ▼
+  [ 4. Instant Cash Offer ]                   [ Adjuster Approval ]
+          │
+          ▼
+  [ 5. Instant UPI Payout (<60s) ]
 ```
 
 ### End-to-End Pipeline Breakdown
