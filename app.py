@@ -1,4 +1,5 @@
-import hashlib, html, io, json, os, re, tempfile, time
+import hashlib, hmac, html, io, json, os, re, tempfile, time
+from contextlib import contextmanager
 import streamlit as st
 from PIL import Image, ImageDraw
 import core
@@ -8,7 +9,8 @@ E = html.escape
 st.markdown("""<style>
 :root{--accent:#EB6F46;--ok:#22A55A;--bad:#EF4444;--warn:#F59E0B;--line:rgba(128,128,128,.30);--card:rgba(128,128,128,.08)}
 html,body,[class*="css"]{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif}
-.block-container{padding-top:1.1rem;max-width:1180px}
+.block-container{padding-top:4.5rem;max-width:1180px}
+[data-testid="stStatusWidget"],[data-testid="stDecoration"]{display:none}
 footer{visibility:hidden}
 .hero{background:linear-gradient(135deg,#1B2A4A 0%,#0B1220 100%);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:24px 28px;margin-bottom:14px;box-shadow:0 8px 24px rgba(0,0,0,.28)}
 .hero .tag{display:inline-block;padding:5px 14px;border-radius:999px;border:1px solid var(--accent);color:#FFB59E;background:rgba(235,111,70,.12);font-size:.78rem;font-weight:700;letter-spacing:.03em}
@@ -39,6 +41,15 @@ footer{visibility:hidden}
 .receipt .s{opacity:.6;font-size:.72rem;text-align:center;margin-top:8px}
 [data-testid="stChatMessage"]{border-radius:12px;border:1px solid var(--line);background:var(--card);padding:10px 14px}
 .stButton>button,.stDownloadButton>button{border-radius:10px;font-weight:600}
+.st-key-admin_on{display:flex;justify-content:flex-end}
+.nav-brand{font-weight:800;font-size:1.05rem;letter-spacing:-.01em}.nav-sub{opacity:.6;font-size:.82rem}
+.carload{max-width:560px;margin:18px auto;text-align:center}
+.road{position:relative;height:64px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.road:after{content:"";position:absolute;left:0;bottom:10px;width:200%;height:3px;background:repeating-linear-gradient(90deg,rgba(128,128,128,.7) 0 22px,transparent 22px 46px);animation:dash .5s linear infinite}
+.car{position:absolute;bottom:16px;left:-70px;font-size:2.5rem;line-height:1;transform:scaleX(-1);animation:drive 2.4s ease-in-out infinite}
+@keyframes drive{0%{left:-70px;transform:scaleX(-1) translateY(0)}25%{transform:scaleX(-1) translateY(-3px)}50%{transform:scaleX(-1) translateY(0)}75%{transform:scaleX(-1) translateY(-3px)}100%{left:100%;transform:scaleX(-1) translateY(0)}}
+@keyframes dash{to{transform:translateX(-46px)}}
+.carmsg{margin-top:10px;font-weight:600;opacity:.8}
 </style>""", unsafe_allow_html=True)
 
 DB = "claims_db.json"  # claim queue, audit trail, photo fingerprints
@@ -75,6 +86,14 @@ EM = {"bumper": "\U0001F697", "door": "\U0001F6AA", "mirror": "\U0001FA9E", "hea
 SEVE = {"minor": "\U0001F7E2 Minor", "moderate": "\U0001F7E1 Moderate", "severe": "\U0001F534 Severe"}
 def cell(label, value, cls="val"): return f'<div class="fcell"><div class="lbl">{label}</div><div class="{cls}">{value}</div></div>'
 
+@contextmanager
+def car_loading(msg):
+    """Replaces st.spinner: a little car drives along the road while the block runs."""
+    ph = st.empty()
+    ph.markdown(f'<div class="carload"><div class="road"><div class="car">\U0001F697</div></div><div class="carmsg">{E(msg)}</div></div>', unsafe_allow_html=True)
+    try: yield
+    finally: ph.empty()
+
 # ---------- secrets and models (backend unchanged) ----------
 PW = os.getenv("ADMIN_PASSWORD", "")
 if "profiles" not in st.session_state:
@@ -90,30 +109,67 @@ if "profiles" not in st.session_state:
         st.session_state.profiles.pop("Default (from secrets)")
 rails = {"lo": .75, "hi": .90, "step": .04, "max_rounds": 3, "min_conf": 70, "cap": 25000}
 policy = {"active": True, "limit": 50000, "excess": 1000, "age": 3, "claims": 0}
-with st.sidebar:
-    st.markdown("### Insurer / Admin")
-    admin_on = st.toggle("Insurer / Admin mode", value=False)
-    is_admin = False
-    if admin_on:
-        if PW and not st.session_state.get("is_admin"):
-            if st.text_input("Admin password", type="password") == PW: st.session_state.is_admin = True; st.rerun()
-        # Admin needs the password. With no ADMIN_PASSWORD set, admin stays locked unless ALLOW_OPEN_ADMIN=1 (local demos only).
-        is_admin = st.session_state.get("is_admin", False) if PW else os.getenv("ALLOW_OPEN_ADMIN") == "1"
-    if is_admin:
-        with st.expander("Guardrails"):
+# ---------- start-up splash: a car drives across once per visit ----------
+if "splash_done" not in st.session_state:
+    with car_loading("Starting Auto-Settle AI..."): time.sleep(1.6)
+    st.session_state.splash_done = True
+
+# ---------- top navigation bar: customer / admin toggle ----------
+def _logout(): st.session_state.is_admin = False; st.session_state.admin_on = False
+
+def _center_card(title, caption):
+    """Centered card on the page; returns the container to draw inside."""
+    _, mid, _ = st.columns([1, 1.2, 1])
+    with mid:
+        st.markdown("<div style='height:10vh'></div>", unsafe_allow_html=True)
+        box = st.container(border=True)
+        with box: st.markdown(f"### {title}"); st.caption(caption)
+    return box
+
+with st.container(border=True):
+    _nl, _nr = st.columns([6, 1.5], vertical_alignment="center")
+    _nl.markdown('<span class="nav-brand">\U0001F697 Auto-Settle AI</span><span class="nav-sub"> &nbsp;·&nbsp; Customer portal / Insurer console</span>', unsafe_allow_html=True)
+    admin_on = _nr.toggle("Insurer / Admin mode", key="admin_on")
+
+is_admin = False
+if admin_on:
+    if st.session_state.get("is_admin"): is_admin = True
+    elif PW:                                                      # password set: show a login in the middle of the screen
+        box = _center_card("\U0001F512 Insurer login", "Enter the admin password to open the adjuster console.")
+        with box:
+            with st.form("admin_login", clear_on_submit=True):
+                pw_in = st.text_input("Password", type="password")
+                ok = st.form_submit_button("Log in", type="primary", use_container_width=True)
+            if ok:
+                if hmac.compare_digest(pw_in.encode(), PW.encode()): st.session_state.is_admin = True; st.rerun()
+                else: st.error("Incorrect password.")
+        st.stop()
+    elif os.getenv("ALLOW_OPEN_ADMIN") == "1": is_admin = True   # local demos only
+    else:
+        box = _center_card("\U0001F512 Admin is locked", "No admin password is configured.")
+        with box: st.info("Set ADMIN_PASSWORD in the app's Secrets to enable the insurer console (or ALLOW_OPEN_ADMIN=1 for a local demo).")
+        st.stop()
+
+if is_admin:
+    with st.expander("⚙️ Admin settings: guardrails, policy record, AI models"):
+        g1, g2, g3 = st.columns(3)
+        with g1:
+            st.markdown("**Guardrails**")
             rails = {"lo": st.number_input("Offer floor (% of net claim)", 1, 100, 75) / 100, "hi": st.number_input("Offer ceiling (%)", 1, 100, 90) / 100,
                      "step": st.number_input("Concession per round (%)", 1, 50, 4) / 100, "max_rounds": st.number_input("Max negotiation rounds", 1, 10, 3),
-                     "min_conf": st.number_input("Min AI confidence (%)", 0, 100, 70), "cap": st.number_input("Auto-settle cap (\u20b9)", 0, 1000000, 25000)}
-        with st.expander("Policy record"):
-            policy = {"active": st.selectbox("Status", ["Active", "Lapsed"]) == "Active", "limit": st.number_input("Max claim limit (\u20b9)", 0, 1000000, 50000),
-                      "excess": st.number_input("Policy excess (\u20b9)", 0, 100000, 1000), "age": st.number_input("Vehicle age (years)", 0, 30, 3), "claims": st.number_input("Claims in last 12 months", 0, 20, 0)}
-        with st.expander("AI models"):
+                     "min_conf": st.number_input("Min AI confidence (%)", 0, 100, 70), "cap": st.number_input("Auto-settle cap (₹)", 0, 1000000, 25000)}
+        with g2:
+            st.markdown("**Policy record**")
+            policy = {"active": st.selectbox("Status", ["Active", "Lapsed"]) == "Active", "limit": st.number_input("Max claim limit (₹)", 0, 1000000, 50000),
+                      "excess": st.number_input("Policy excess (₹)", 0, 100000, 1000), "age": st.number_input("Vehicle age (years)", 0, 30, 3), "claims": st.number_input("Claims in last 12 months", 0, 20, 0)}
+        with g3:
+            st.markdown("**AI models**")
             pn = st.text_input("Name", key="pn"); pt = st.selectbox("Type", ["openai-compatible", "anthropic", "ollama"], key="pt")
             pm = st.text_input("Model name (must support images)", key="pm"); pb = st.text_input("Base URL (not for anthropic)", key="pb"); pk = st.text_input("API key (this session only)", type="password", key="pk")
             if st.button("Add model") and pn and pm: st.session_state.profiles[pn] = {"type": "openai" if pt == "openai-compatible" else pt, "model": pm, "base_url": pb, "key": pk}
             active = st.selectbox("Model used for claims", list(st.session_state.profiles))
-    else: active = list(st.session_state.profiles)[0]
-    st.caption("Admin mode unlocks settings, the adjuster dashboard, audit trail and model comparison." + (" Protected by a password." if PW else " Locked: set ADMIN_PASSWORD in Secrets to enable it (or ALLOW_OPEN_ADMIN=1 for a local demo)."))
+        st.button("Log out", on_click=_logout)
+else: active = list(st.session_state.profiles)[0]
 cfg = st.session_state.profiles[active]
 
 # ---------- header ----------
@@ -166,7 +222,7 @@ with T["New claim"]:
             else: st.info("Your photo will appear here once you upload it.")
     if go and up:
         try:
-            with st.spinner("Analysing your photo. This usually takes 10 to 20 seconds..."):
+            with car_loading("Analysing your photo. This usually takes 10 to 20 seconds..."):
                 img, jpeg = to_jpeg(up.getvalue(), up.type.startswith("video")); h = hashlib.sha256(jpeg).hexdigest(); d = db_load(); extra = []
                 if h in d["hashes"]: extra.append("Duplicate photo: this image was already submitted")
                 else: d["hashes"].append(h); db_save(d)
