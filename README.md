@@ -63,21 +63,42 @@ Automatic escalation to human surveyors triggers instantly upon:
 
 ```mermaid
 flowchart TD
-    A["🚗 Claimant Uploads Damage Photo"] --> B{"CV Quality Check (Sharpness & Exposure)"}
-    B -- "Blurry / Poor" --> B1["❌ Prompt Re-take"]
-    B -- "Verified" --> C["SHA-256 Image Hash Check"]
-    C -- "Duplicate Found" --> D["🚨 Escalate: Duplicate Claim"]
-    C -- "Original Image" --> E["AI Vision Analysis (Gemini / Groq / OpenRouter)"]
-    E --> F["Extract Part, Type, Severity & Bounding Box"]
-    F --> G["Deterministic Business Rules Engine"]
-    G --> H["Apply Parts Rate + Labor + Depreciation - Excess"]
-    H --> I{"Guardrail Verification (10 Checks)"}
-    I -- "Severe / Low Conf / Over Cap" --> J["🚨 Escalate to Adjuster Console"]
-    I -- "Passed All Rules" --> K["⚡ Instant Cash Offer (75%-90% Band)"]
-    K --> L["Claimant Accepts & Enters UPI ID"]
-    L --> M["💳 Instant UPI Transfer (<60s) & IRDAI Voucher"]
-    J --> N["👨‍💼 Human Adjuster Workbench (Approve / Reject)"]
+    subgraph Intake["1. First Notice of Loss (FNOL)"]
+        A["Claimant Uploads Photo"] --> B{"CV Quality Check"}
+        B -->|Blurry or Dark| B1["Prompt Re-take"]
+        B -->|Verified Clear| C["SHA-256 Hash Check"]
+        C -->|Duplicate Found| D["Flag: Duplicate Claim"]
+    end
+
+    subgraph Vision["2. Vision & Damage Localization"]
+        C -->|Original Image| E["AI Vision: Gemini / Groq / OpenRouter"]
+        E --> F["Extract Part, Type, Severity & Bounding Box"]
+    end
+
+    subgraph Valuation["3. Deterministic Rules & Guardrails"]
+        F --> G["Fixed Business Pricing Engine"]
+        G --> H["Compute: Parts + Labor - Depreciation - Deductible"]
+        H --> I{"10 Underwriter Guardrails"}
+        I -->|Severe / Low Conf / Over Cap| J["Tier-2 Adjuster Escalation"]
+        I -->|Passed All Guardrails| K["Pre-Approved Cash Offer (75%-90%)"]
+    end
+
+    subgraph Payout["4. Instant Settlement & Payout"]
+        K --> L["Claimant Accepts & Enters UPI ID"]
+        L --> M["Instant IMPS/UPI Payout & IRDAI Receipt"]
+        J --> N["Adjuster Workbench: Approve or Reject"]
+    end
 ```
+
+### End-to-End Pipeline Breakdown
+
+| Stage | Module | Input | Output / Decision |
+| :--- | :--- | :--- | :--- |
+| **1. Intake & Quality Check** | OpenCV (Laplacian variance & mean exposure) | Smartphone photo / video | Verified clarity score + SHA-256 duplicate image fingerprint |
+| **2. Damage Appraisal** | Multi-Model Vision (Gemini 2.5 Flash / Groq / OpenRouter) | Damage JPEG + Claimed Part | Identified components, severity classification, bounding box $[y, x, h, w]$ |
+| **3. Pricing & Valuation** | Deterministic Insurance Engine (`core.py`) | Damage findings + Vehicle age + Policy excess | Gross repair estimate $\to$ depreciation deduction $\to$ net claim value |
+| **4. Guardrails & Risk Check** | 10 Underwriting Safety Rules | Net claim, AI confidence, parts list | **Pass:** Instant Cash Offer ($75\% - 90\%$) OR **Fail:** Escalate to Adjuster |
+| **5. Instant Payout** | Simulated UPI / IMPS Gateway | Claimant UPI VPA (`user@bank`) | Sub-60s credit confirmation + IRDAI digital settlement voucher |
 
 ---
 
