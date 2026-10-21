@@ -808,6 +808,14 @@ voucher compliant with IRDAI minor motor claim guidelines.
                             if q: q.update(state="Needs review", detail="ESCALATED: In-person surveyor requested"); db_save(d)
                             log("DECISION", "ESCALATED: Customer requested in-person surveyor inspection")
                             st.rerun()
+                with st.expander(T_("💬 Discuss Offer / Counteroffer with AI Adjuster", "💬 प्रस्ताव पर चर्चा / प्रति-प्रस्ताव करें")):
+                    st.caption(T_("Interactive settlement negotiation bounded by strict insurer financial limits (75%–90%).", "बीमा कंपनी के निश्चित वित्तीय नियमों (75%–90%) के तहत स्वचालित बातचीत।"))
+                    for sender, msg in st.session_state.chat:
+                        with st.chat_message(sender): st.write(msg)
+                    with st.form("chat_counter_form", clear_on_submit=True):
+                        user_chat = st.text_input(T_("Your message or counteroffer amount", "आपका संदेश या प्रति-प्रस्ताव राशि"), placeholder="e.g. Can you do ₹5,200?")
+                        if st.form_submit_button(T_("Send Counteroffer", "प्रति-प्रस्ताव भेजें"), type="secondary") and user_chat.strip():
+                            converse(c, user_chat.strip(), "Hindi" if st.session_state.get("app_lang") == "हिंदी" else "English")
 
 with T["Assumptions"]:
     st.markdown("#### How it works")
