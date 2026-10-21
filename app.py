@@ -124,13 +124,16 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.top-nav-anchor){
 .nav-brand{font-weight:800;font-size:1.05rem;letter-spacing:-.01em}
 .nav-badge-pill{display:inline-flex;align-items:center;gap:4px;font-size:0.68rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;background:rgba(34,165,90,0.12);color:var(--ok);border:1px solid rgba(34,165,90,0.35);padding:2px 8px;border-radius:999px}
 .nav-sub{opacity:.6;font-size:.82rem}
-.carload{max-width:560px;margin:18px auto;text-align:center}
-.road{position:relative;height:64px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--card)}
-.road:after{content:"";position:absolute;left:0;bottom:10px;width:200%;height:3px;background:repeating-linear-gradient(90deg,rgba(128,128,128,.7) 0 22px,transparent 22px 46px);animation:dash .5s linear infinite}
-.car{position:absolute;bottom:16px;left:-70px;font-size:2.5rem;line-height:1;transform:scaleX(-1);animation:drive 2.4s ease-in-out infinite}
-@keyframes drive{0%{left:-70px;transform:scaleX(-1) translateY(0)}25%{transform:scaleX(-1) translateY(-3px)}50%{transform:scaleX(-1) translateY(0)}75%{transform:scaleX(-1) translateY(-3px)}100%{left:100%;transform:scaleX(-1) translateY(0)}}
-@keyframes dash{to{transform:translateX(-46px)}}
-.carmsg{margin-top:10px;font-weight:600;opacity:.8}
+/* AI Vehicle Damage Scanner (Car Outline with Color Fill Reveal) */
+.carload-card{background:rgba(128,128,128,0.06);border:1px solid var(--line);border-radius:18px;padding:26px 20px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.25);max-width:440px;margin:20px auto;backdrop-filter:blur(10px)}
+.car-scanner{position:relative;width:280px;height:85px;margin:0 auto}
+.car-layer-outline{position:absolute;top:0;left:0;width:280px;height:85px}
+.car-fill-reveal{position:absolute;top:0;left:0;height:85px;width:0%;overflow:hidden;animation:scanWipe 2.8s cubic-bezier(0.4,0,0.2,1) infinite;border-right:2px solid #22A55A;box-shadow:4px 0 16px -2px #22A55A, 2px 0 8px 1px #EB6F46}
+.car-fill-reveal svg{width:280px;height:85px;min-width:280px}
+@keyframes scanWipe{0%{width:0%}45%{width:100%}60%{width:100%}100%{width:0%}}
+.scan-text{margin-top:16px;font-size:0.88rem;font-weight:600;letter-spacing:0.02em;display:flex;align-items:center;justify-content:center;gap:8px}
+.scan-dot{width:8px;height:8px;border-radius:50%;background:#EB6F46;box-shadow:0 0 8px #EB6F46;animation:pulseDot 1s infinite alternate}
+@keyframes pulseDot{from{opacity:0.4;transform:scale(0.85)}to{opacity:1;transform:scale(1.15)}}
 .meter{margin:10px 0 6px}.meter-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.meter-val{font-weight:700;font-size:.85rem}
 .meter-track{position:relative;height:10px;border-radius:999px;background:rgba(128,128,128,.22);margin-top:6px}
 .meter-fill{height:100%;border-radius:999px}.meter-fill.ok{background:var(--ok)}.meter-fill.warn{background:var(--warn)}.meter-fill.bad{background:var(--bad)}
@@ -219,11 +222,48 @@ EM = {"bumper": "\U0001F697", "door": "\U0001F6AA", "mirror": "\U0001FA9E", "hea
 SEVE = {"minor": "\U0001F7E2 Minor", "moderate": "\U0001F7E1 Moderate", "severe": "\U0001F534 Severe"}
 def cell(label, value, cls="val"): return f'<div class="fcell"><div class="lbl">{label}</div><div class="{cls}">{value}</div></div>'
 
+CAR_OUTLINE_SVG = (
+    '<svg viewBox="0 0 280 85">'
+    '<path d="M 18,58 L 32,58 A 17,17 0 0,1 66,58 L 184,58 A 17,17 0 0,1 218,58 L 255,58 C 264,58 270,52 270,45 C 270,39 265,35 252,33 L 220,31 L 185,14 C 178,11 168,10 150,10 L 105,10 C 92,10 80,14 68,23 L 40,33 L 20,37 C 14,38 10,43 10,49 C 10,54 14,58 18,58 Z" '
+    'fill="rgba(128,128,128,0.08)" stroke="rgba(128,128,128,0.4)" stroke-width="2" stroke-linejoin="round"/>'
+    '<path d="M 75,24 L 108,14 L 142,14 L 142,31 L 65,31 Z M 148,14 L 182,14 L 212,31 L 148,31 Z" '
+    'fill="none" stroke="rgba(128,128,128,0.3)" stroke-width="1.5"/>'
+    '<circle cx="49" cy="58" r="15" fill="rgba(0,0,0,0.3)" stroke="rgba(128,128,128,0.4)" stroke-width="2.5"/>'
+    '<circle cx="49" cy="58" r="5" fill="rgba(128,128,128,0.3)"/>'
+    '<circle cx="201" cy="58" r="15" fill="rgba(0,0,0,0.3)" stroke="rgba(128,128,128,0.4)" stroke-width="2.5"/>'
+    '<circle cx="201" cy="58" r="5" fill="rgba(128,128,128,0.3)"/>'
+    '<path d="M 262,41 L 268,45" stroke="rgba(239,68,68,0.45)" stroke-width="2.5" stroke-linecap="round"/>'
+    '<path d="M 12,44 L 18,47" stroke="rgba(245,158,11,0.45)" stroke-width="2.5" stroke-linecap="round"/>'
+    '</svg>'
+)
+
+CAR_FILLED_SVG = (
+    '<svg viewBox="0 0 280 85">'
+    '<defs>'
+    '<linearGradient id="carBodyGrad" x1="0%" y1="0%" x2="100%" y2="0%">'
+    '<stop offset="0%" stop-color="#EB6F46"/>'
+    '<stop offset="55%" stop-color="#FF8A50"/>'
+    '<stop offset="100%" stop-color="#22A55A"/>'
+    '</linearGradient>'
+    '</defs>'
+    '<path d="M 18,58 L 32,58 A 17,17 0 0,1 66,58 L 184,58 A 17,17 0 0,1 218,58 L 255,58 C 264,58 270,52 270,45 C 270,39 265,35 252,33 L 220,31 L 185,14 C 178,11 168,10 150,10 L 105,10 C 92,10 80,14 68,23 L 40,33 L 20,37 C 14,38 10,43 10,49 C 10,54 14,58 18,58 Z" '
+    'fill="url(#carBodyGrad)" stroke="#EB6F46" stroke-width="2" stroke-linejoin="round"/>'
+    '<path d="M 75,24 L 108,14 L 142,14 L 142,31 L 65,31 Z M 148,14 L 182,14 L 212,31 L 148,31 Z" '
+    'fill="rgba(255,255,255,0.35)" stroke="#ffffff" stroke-width="1.5"/>'
+    '<circle cx="49" cy="58" r="15" fill="#131A2A" stroke="#22A55A" stroke-width="2.5"/>'
+    '<circle cx="49" cy="58" r="5" fill="#22A55A"/>'
+    '<circle cx="201" cy="58" r="15" fill="#131A2A" stroke="#22A55A" stroke-width="2.5"/>'
+    '<circle cx="201" cy="58" r="5" fill="#22A55A"/>'
+    '<path d="M 262,41 L 268,45" stroke="#EF4444" stroke-width="3" stroke-linecap="round"/>'
+    '<path d="M 12,44 L 18,47" stroke="#FFD166" stroke-width="3" stroke-linecap="round"/>'
+    '</svg>'
+)
+
 @contextmanager
 def car_loading(msg):
-    """Replaces st.spinner: a little car drives along the road while the block runs."""
+    """Replaces st.spinner: a modern car outline that fills with vibrant color as the scanner sweeps across."""
     ph = st.empty()
-    ph.markdown(f'<div class="carload"><div class="road"><div class="car">\U0001F697</div></div><div class="carmsg">{E(msg)}</div></div>', unsafe_allow_html=True)
+    ph.markdown(f'<div class="carload-card"><div class="car-scanner"><div class="car-layer-outline">{CAR_OUTLINE_SVG}</div><div class="car-fill-reveal">{CAR_FILLED_SVG}</div></div><div class="scan-text"><span class="scan-dot"></span><span>{E(msg)}</span></div></div>', unsafe_allow_html=True)
     try: yield
     finally: ph.empty()
 
