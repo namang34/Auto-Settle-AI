@@ -61,21 +61,6 @@ Automatic escalation to human surveyors triggers instantly upon:
 
 ## 🏗️ Architecture & Pipeline Flow
 
-```mermaid
-flowchart TD
-    A[1. Photo Upload] --> B{Clear Photo?}
-    B -->|No| B1[Prompt Retake]
-    B -->|Yes| C[2. AI Vision Scan]
-    C --> D[Identify Damage & Severity]
-    D --> E[3. Fixed Pricing Rules]
-    E --> F{Guardrails Pass?}
-    F -->|No: Severe or Low Conf| G[Adjuster Review Queue]
-    F -->|Yes: Approved STP| H[4. Instant Cash Offer]
-    H --> I[Claimant Accepts & Adds UPI]
-    I --> J[5. Instant UPI Payout <60s]
-    G --> K[Adjuster Workbench Override]
-```
-
 ```text
   [ 1. Photo Upload ]
           │
