@@ -348,6 +348,8 @@ with T["New claim"]:
         st.divider()
         if c["status"] == "escalated":
             st.markdown('<div class="banner bad"><h3>\U0001F6A8 Tier-2 Adjuster Review Required</h3><div>This claim could not be decided safely by the system. No offer has been made.</div><ul>' + "".join(f"<li>{E(str(f))}</li>" for f in c["flags"]) + "</ul></div>", unsafe_allow_html=True)
+        elif c["status"] == "rejected":
+            st.markdown('<div class="banner bad"><h3>❌ Claim Rejected by Adjuster</h3><div>This claim was reviewed by an adjuster and declined.</div></div>', unsafe_allow_html=True)
         else:
             st.markdown('<div class="banner ok"><h3>\u2705 ' + ("Settled via Straight-Through Processing" if c["status"] == "settled" else "Eligible for Instant Straight-Through Settlement") + '</h3><div>Confidence, policy and fraud checks passed. Offers are set by fixed rules, never by the AI.</div></div>', unsafe_allow_html=True)
         with st.container(border=True):                       # one-glance summary of the whole claim
@@ -361,7 +363,9 @@ with T["New claim"]:
             with SR:
                 rc = st.session_state.get("receipt")
                 if c["status"] == "escalated":
-                    st.markdown(f'<div class="story-k">Status</div><div class="story-amt" style="font-size:1.4rem">\U0001F6A8 Sent to an adjuster</div><div class="story-note">Reference {E(ref) or "pending"}. A human adjuster will contact you. No offer has been made.</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="story-k">Status</div><div class="story-amt" style="font-size:1.4rem">\U0001F6A8 Sent to an adjuster</div><div class="story-note">Reference {E(ref) or "pending"}. A human adjuster will review. You can approve this in the Adjuster dashboard tab.</div>', unsafe_allow_html=True)
+                elif c["status"] == "rejected":
+                    st.markdown(f'<div class="story-k">Status</div><div class="story-amt" style="font-size:1.4rem;color:var(--bad)">❌ Claim Rejected</div><div class="story-note">An adjuster declined this claim.</div>', unsafe_allow_html=True)
                 elif c["status"] == "settled":
                     done = f"Paid \u00b7 {E(rc['id'])}" if rc else "Deal confirmed. Enter your UPI ID below to get paid."
                     st.markdown(f'<div class="story-k">Settlement</div><div class="story-amt" style="color:var(--ok)">{core.inr(c["amount"])}</div><div class="story-note">{done}</div>', unsafe_allow_html=True)
@@ -393,9 +397,15 @@ with T["New claim"]:
             st.markdown("#### Where the estimate comes from")
             st.markdown(part_table(c), unsafe_allow_html=True)
             st.caption("Every figure is set by fixed pricing rules from a mock parts and labour table, not by the AI.")
-        if c["status"] != "escalated":
-            with st.container(border=True):
-                st.markdown("#### Settlement conversation")
+        with st.container(border=True):
+            st.markdown("#### Settlement conversation")
+            if c["status"] == "escalated":
+                for r, m in st.session_state.chat: st.chat_message(r).write(m)
+                st.info("ℹ️ Automated negotiation is paused while this claim is under review by a human adjuster. You can approve this claim in the **Adjuster dashboard** tab (toggle Admin mode on).")
+            elif c["status"] == "rejected":
+                for r, m in st.session_state.chat: st.chat_message(r).write(m)
+                st.error("❌ This claim was reviewed and rejected by the adjuster. No payout will be made.")
+            else:
                 lang = st.radio("Chat language", ["English", "Hindi"], horizontal=True)
                 for r, m in st.session_state.chat: st.chat_message(r).write(m)
                 if c["status"] == "negotiating":
@@ -445,8 +455,25 @@ if is_admin:
         for i, x in enumerate(q):
             a, b, c2, e = st.columns([1, 5, 2, 3]); a.write(f"**{x['id']}**"); b.write(x["detail"]); c2.write(x["state"])
             if x["state"] == "Needs review":
-                if e.button("Approve", key=f"a{i}"): x["state"] = "Approved by adjuster"; db_save(d); log("ADJUSTER", f"{x['id']} approved"); st.rerun()
-                if e.button("Reject", key=f"r{i}"): x["state"] = "Rejected by adjuster"; db_save(d); log("ADJUSTER", f"{x['id']} rejected"); st.rerun()
+                if e.button("Approve", key=f"a{i}"):
+                    x["state"] = "Approved by adjuster"; db_save(d); log("ADJUSTER", f"{x['id']} approved")
+                    if st.session_state.get("claim") and st.session_state.get("cid") == x["id"]:
+                        c = st.session_state.claim
+                        c["status"] = "negotiating"
+                        c["flags"] = []
+                        msg = f"Adjuster review complete: Approved! Your claim has been approved for cash settlement. My approved offer is {core.inr(c['offer'])}. What do you think?"
+                        if not st.session_state.chat or st.session_state.chat[-1][1] != msg:
+                            st.session_state.chat.append(("assistant", msg))
+                    st.rerun()
+                if e.button("Reject", key=f"r{i}"):
+                    x["state"] = "Rejected by adjuster"; db_save(d); log("ADJUSTER", f"{x['id']} rejected")
+                    if st.session_state.get("claim") and st.session_state.get("cid") == x["id"]:
+                        c = st.session_state.claim
+                        c["status"] = "rejected"
+                        msg = "The adjuster has reviewed and rejected this claim."
+                        if not st.session_state.chat or st.session_state.chat[-1][1] != msg:
+                            st.session_state.chat.append(("assistant", msg))
+                    st.rerun()
         if st.button("Clear all stored data (demo reset)"): db_save({"queue": [], "log": [], "hashes": []}); st.rerun()
     with T["Audit trail"]:
         d = db_load(); st.dataframe(d["log"], width="stretch"); st.download_button("Download audit trail (JSON)", json.dumps(d["log"], indent=1), "audit_trail.json")
