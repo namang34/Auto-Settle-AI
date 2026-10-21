@@ -97,7 +97,8 @@ with st.sidebar:
     if admin_on:
         if PW and not st.session_state.get("is_admin"):
             if st.text_input("Admin password", type="password") == PW: st.session_state.is_admin = True; st.rerun()
-        is_admin = (not PW) or st.session_state.get("is_admin", False)
+        # Admin needs the password. With no ADMIN_PASSWORD set, admin stays locked unless ALLOW_OPEN_ADMIN=1 (local demos only).
+        is_admin = st.session_state.get("is_admin", False) if PW else os.getenv("ALLOW_OPEN_ADMIN") == "1"
     if is_admin:
         with st.expander("Guardrails"):
             rails = {"lo": st.number_input("Offer floor (% of net claim)", 1, 100, 75) / 100, "hi": st.number_input("Offer ceiling (%)", 1, 100, 90) / 100,
@@ -112,7 +113,7 @@ with st.sidebar:
             if st.button("Add model") and pn and pm: st.session_state.profiles[pn] = {"type": "openai" if pt == "openai-compatible" else pt, "model": pm, "base_url": pb, "key": pk}
             active = st.selectbox("Model used for claims", list(st.session_state.profiles))
     else: active = list(st.session_state.profiles)[0]
-    st.caption("Admin mode unlocks settings, the adjuster dashboard, audit trail and model comparison." + (" Protected by a password." if PW else " Set ADMIN_PASSWORD in Secrets to protect it."))
+    st.caption("Admin mode unlocks settings, the adjuster dashboard, audit trail and model comparison." + (" Protected by a password." if PW else " Locked: set ADMIN_PASSWORD in Secrets to enable it (or ALLOW_OPEN_ADMIN=1 for a local demo)."))
 cfg = st.session_state.profiles[active]
 
 # ---------- header ----------

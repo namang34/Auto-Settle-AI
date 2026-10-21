@@ -3,4 +3,6 @@ anthropic
 openai
 requests
 pillow
+numpy
+pandas
 opencv-python-headless

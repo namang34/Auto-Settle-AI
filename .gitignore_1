@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+claims_db.json
+.streamlit/secrets.toml
+secrets.toml
+.env

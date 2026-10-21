@@ -79,18 +79,27 @@ def translate_hi(text, cfg=None):
     except Exception: return text
 
 # ---------- estimate, flags, risk ----------
+def _num(v, default=0.0):
+    """Coerce a model-supplied value ('85', 85, '85%') to a float; never raises."""
+    try: return float(str(v).strip().rstrip("%"))
+    except Exception: return default
+
 def assess(f, claimed, policy, rails, extra_flags=()):
+    raw_items = f.get("items") or [f]
+    unknown = sorted({str(i.get("part")) for i in raw_items if i.get("part") not in PARTS})   # parts we cannot price
     items = [{"part": i.get("part") if i.get("part") in PARTS else "bumper", "type": i.get("type"), "severity": i.get("severity")}
-             for i in (f.get("items") or [f])]
+             for i in raw_items]
     raw = lab = 0.0
     for i in items:
         cost, hrs = PARTS[i["part"]]; sv = SEV.get(i["severity"], .6); tp = TYP.get(i["type"], .8)
         raw += cost * sv * tp; lab += hrs * RATE * (.5 + sv / 2)
     dep = min(.5, max(0, policy["age"]) * .05)           # illustrative: 5% per year, max 50%
     parts = raw * (1 - dep); gross = parts + lab; net = max(0.0, gross - policy["excess"])
-    conf = f.get("confidence", 0)
+    conf = max(0, min(100, round(_num(f.get("confidence", 0)))))
     flags = list(extra_flags)
     if not f.get("quality_ok", True): flags.append("Photo quality unusable")
+    if unknown: flags.append(f"AI reported part(s) not in the price table: {', '.join(unknown)}, so the estimate is unreliable")
+    if net <= 0: flags.append(f"Repair estimate {inr(gross)} is within the {inr(policy['excess'])} policy excess, so no payout is due. A human must confirm")
     if conf < rails["min_conf"]: flags.append(f"AI confidence {conf}% is below the {rails['min_conf']}% threshold")
     if any(i["severity"] == "severe" for i in items): flags.append("Severe damage needs a human inspection")
     if net > rails["cap"]: flags.append(f"Net claim {inr(net)} exceeds the auto-settle cap {inr(rails['cap'])}")
@@ -108,8 +117,21 @@ def assess(f, claimed, policy, rails, extra_flags=()):
             "status": "escalated" if flags else "negotiating", "offer": net * rails["lo"], "round": 0, "amount": None}
 
 # ---------- negotiation: code decides every number ----------
-INJECT = r"ignore (all|previous|your)|system prompt|you are now|override|pretend"
-ANGRY = r"lawyer|legal action|court|ombudsman|irdai|consumer forum|cheat|useless|worst|angry"
+INJECT = r"\b(?:ignore (?:all|previous|your)|system prompt|you are now|pretend)\b|\boverride (?:your|all|the) (?:rules|instructions|guardrails)\b"
+ANGRY = r"\b(?:lawyer|legal action|court|ombudsman|irdai|consumer forum|cheat(?:ed|ing)?|useless|worst|angry)\b"
+ACCEPT = r"\b(?:yes|yeah|ok|okay|accept(?:ed)?|deal|agreed?|sure|fine)\b"
+REFUSE = r"\b(?:no|not|don'?t|can'?t|cannot|won'?t|never|reject)\b"
+_AMT = re.compile(r"(?P<cur>₹|rs\.?|inr)?\s*(?P<n>\d+(?:\.\d+)?)(?!\.?\d)\s*(?P<mul>k\b|thousand\b|lakhs?\b|lacs?\b)?(?!\s*(?:days?|years?|yrs?|months?|hours?|hrs?|%|percent|km|kms|times|parts?|rounds?))", re.I)
+
+def parse_amount(text):
+    """First plausible rupee amount in free text, or None. Handles 3,500 / 3500 / 3.5k / 2 lakh / Rs 4000.
+    Ignores durations, years (e.g. '2019 model') and tiny bare numbers, which are not rupee offers."""
+    for m in _AMT.finditer(text.replace(",", "")):
+        n, cur, mul = float(m.group("n")), m.group("cur"), (m.group("mul") or "").lower()
+        if mul: n *= 100000 if mul.startswith(("lakh", "lac")) else 1000
+        elif not cur and (1900 <= n <= 2100 or n < 100): continue
+        return n
+    return None
 
 def opening(c): return (f"Hello! I\u2019ve reviewed your photos. Your net claim value (after depreciation and policy excess) is {inr(c['net'])}. "
                         f"If you take cash instead, I can offer {inr(c['offer'])} right now, paid instantly with no garage wait. What do you think?")
@@ -121,10 +143,12 @@ def negotiate(c, text, rails):
     low = text.lower()
     if re.search(INJECT, low): return _esc(c, "Your message looks like an attempt to change my rules, so this has been flagged.")
     if re.search(ANGRY, low): return _esc(c, "I can hear this is frustrating, and a person should handle it.")
-    m = re.search(r"\d+(?:\.\d+)?", text.replace(",", ""))
-    if not m: return f"Could you share the amount you have in mind in rupees? My current offer is {inr(c['offer'])}."
-    ask = float(m.group()); c["round"] += 1; step = rails["step"] * c["net"]
-    if ask <= c["offer"]: return _settle(c, ask, "Accepted your figure.")
+    ask = parse_amount(text)
+    if ask is None:
+        if re.search(ACCEPT, low) and not re.search(REFUSE, low): return _settle(c, c["offer"], "Accepted my current offer.")
+        return f"Could you share the amount you have in mind in rupees (for example 3500)? My current offer is {inr(c['offer'])}."
+    c["round"] += 1; step = rails["step"] * c["net"]
+    if ask <= c["offer"]: return _settle(c, c["offer"], f"You asked for {inr(ask)}, which is below my offer, so you receive my full offer.")
     if ask <= c["hi"] and ask - c["offer"] <= step: return _settle(c, ask, "Your figure is within my authority.")
     if c["round"] > rails["max_rounds"]:
         if ask > c["hi"] * 1.5: return _esc(c, "This amount is far outside what I am allowed to settle.")
