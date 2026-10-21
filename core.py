@@ -1,5 +1,5 @@
 """Auto-Settle core logic. The AI only DESCRIBES damage; plain code sets every number and enforces every limit."""
-import base64, io, json, os, re
+import base64, io, json, os, re, time
 import requests
 
 PARTS = {"bumper": (6500, 3), "door": (9000, 4), "mirror": (3500, 1), "headlight": (5500, 1.5),
@@ -32,9 +32,29 @@ def ask_llm(prompt, img_jpeg=None, cfg=None):
         from openai import OpenAI
         content = [{"type": "text", "text": prompt}]
         if b64: content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64}})
-        client = OpenAI(api_key=cfg["key"], base_url=(cfg.get("base_url") or "https://api.openai.com/v1"))
-        r = client.chat.completions.create(model=cfg["model"], messages=[{"role": "user", "content": content}], max_tokens=MAX_TOKENS, timeout=120)
-        return r.choices[0].message.content
+        api_key = cfg.get("key") or cfg.get("api_key") or ""
+        base_url = (cfg.get("base_url") or "https://api.openai.com/v1").rstrip("/")
+        headers = {}
+        if "openrouter" in base_url.lower():
+            headers["HTTP-Referer"] = "https://auto-settle-ng434.streamlit.app"
+            headers["X-Title"] = "Auto-Settle AI"
+        client = OpenAI(api_key=api_key, base_url=base_url, default_headers=headers if headers else None, timeout=60.0)
+        call_kwargs = {"model": cfg["model"], "messages": [{"role": "user", "content": content}], "max_tokens": MAX_TOKENS}
+        if "gemini" in str(cfg.get("model", "")).lower():
+            call_kwargs["reasoning_effort"] = "low"  # drastically reduces Gemini 3.8 thinking latency
+        for attempt in range(3):
+            try:
+                r = client.chat.completions.create(**call_kwargs)
+                return r.choices[0].message.content
+            except Exception as ex:
+                s = str(ex).lower()
+                if "reasoning_effort" in s:
+                    call_kwargs.pop("reasoning_effort", None)
+                    continue
+                if ("429" in s or "quota" in s or "rate" in s or "exhausted" in s or "overloaded" in s or "busy" in s) and attempt < 2:
+                    time.sleep(3 * (attempt + 1))
+                    continue
+                raise
     import anthropic
     content = []
     if b64: content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
@@ -69,21 +89,37 @@ def valid_box(b):
 
 def analyse_image(jpeg, cfg=None):
     def pj(t):
+        if not t: raise ValueError("Empty model response")
+        fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", t, re.S)
+        candidates = [fence.group(1)] if fence else []
+        start = t.find("{")
+        if start != -1:
+            depth = 0
+            for idx in range(start, len(t)):
+                if t[idx] == '{': depth += 1
+                elif t[idx] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        candidates.append(t[start:idx+1])
+                        break
         m = re.search(r"\{.*\}", t, re.S)
-        if not m: raise ValueError("No JSON object found in model response")
-        raw = m.group(0)
-        try: return json.loads(raw)                      # valid JSON first: never alter it
-        except Exception: pass
-        raw = re.sub(r",\s*([}\]])", r"\1", raw)          # trailing commas
-        try: return json.loads(raw)
-        except Exception: pass
-        raw = raw.replace("'", '"')                       # last resort: single quotes
-        raw = re.sub(r'(?<=\{|,)\s*(\w+)\s*:', r' "\1":', raw)  # unquoted keys
-        return json.loads(raw)
+        if m: candidates.append(m.group(0))
+        for raw in candidates:
+            try: return json.loads(raw)
+            except Exception: pass
+            raw_clean = re.sub(r",\s*([}\]])", r"\1", raw)
+            try: return json.loads(raw_clean)
+            except Exception: pass
+            raw_clean = raw_clean.replace("'", '"')
+            raw_clean = re.sub(r'(?<=\{|,)\s*(\w+)\s*:', r' "\1":', raw_clean)
+            try: return json.loads(raw_clean)
+            except Exception: pass
+        raise ValueError("No JSON object found in model response: " + str(t[:150]))
     try: r = pj(ask_llm(VISION_PROMPT, jpeg, cfg))
     except ValueError:      # empty, truncated or non-JSON reply (JSONDecodeError is a ValueError): ask once more, strictly
         r = pj(ask_llm(VISION_PROMPT + " IMPORTANT: reply with ONE compact JSON object only. No markdown, no commentary.", jpeg, cfg))
     try:  # second pass: ask the model to look again for missed parts
+        time.sleep(1.5)  # brief pause to stay under burst rate limits
         r2 = pj(ask_llm("Earlier you listed these damaged parts: " + json.dumps(_items(r)) + ". Look at the image again, area by area. "
                         'Return ONLY JSON {"items":[every damaged part including any you missed, each {"part","type","severity","box":[x,y,width,height] fractions 0-1 tightly around that part}]}. Allowed parts: ' + "|".join(PARTS), jpeg, cfg))
         first = _items(r)

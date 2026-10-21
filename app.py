@@ -83,7 +83,7 @@ def to_jpeg(raw, is_video):
         if not ok: raise ValueError("Could not read the video")
         img = Image.fromarray(fr[:, :, ::-1])
     else: img = Image.open(io.BytesIO(raw)).convert("RGB")
-    img.thumbnail((1280, 1280)); b = io.BytesIO(); img.save(b, "JPEG", quality=85); return img, b.getvalue()
+    img.thumbnail((800, 800)); b = io.BytesIO(); img.save(b, "JPEG", quality=80); return img, b.getvalue()
 
 @st.cache_data(show_spinner=False)
 def photo_quality(raw):
@@ -169,7 +169,9 @@ def friendly_error(e):
     """Turn a raw exception into a one-line reason the user can act on."""
     s = str(e).lower()
     if "json" in s or "expecting" in s or "delimiter" in s: return "The AI's reply could not be read (it may have been cut off)."
-    if any(k in s for k in ("api key", "api_key", "authentication", "unauthorized", "401", "403", "permission", "invalid x-api-key")): return "The AI service rejected the request. Check the API key and model name in the app's Secrets."
+    if any(k in s for k in ("api key", "api_key", "authentication", "unauthorized", "401", "403", "permission", "invalid x-api-key")): return "The AI service rejected the request. Check your API key in Streamlit Secrets."
+    if "keyerror" in s or "'key'" in s: return "Missing 'key' in your model Secrets configuration."
+    if "no available providers" in s or "503" in s: return "No provider is currently online for this free model on OpenRouter. Try switching to Gemini or Groq."
     if "429" in s or "quota" in s or "rate limit" in s or "resource_exhausted" in s or "overloaded" in s: return "The AI service is busy or out of quota. Wait a minute and try again."
     if "404" in s or "model" in s and ("not found" in s or "does not exist" in s): return "The AI model name was not found. Check the model name in the app's Secrets."
     if "timed out" in s or "timeout" in s or "connection" in s or "name resolution" in s: return "Could not reach the AI service. Check the connection and try again."
@@ -191,7 +193,7 @@ def part_table(c):
     return ('<table class="ptable"><thead><tr><th>Part</th><th>Damage</th><th>Severity</th><th class="n">Parts</th><th class="n">Labour</th><th class="n">Estimate</th><th>Share</th></tr></thead><tbody>' + rows + '</tbody></table>')
 
 # ---------- secrets and models (backend unchanged) ----------
-PW = os.getenv("ADMIN_PASSWORD", "")
+PW = st.secrets.get("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", "")
 if "profiles" not in st.session_state:
     st.session_state.profiles = {"Default (from secrets)": None}
     try:  # [ai] table, e.g. type / model_name / base_url / api_key
@@ -199,7 +201,11 @@ if "profiles" not in st.session_state:
         st.session_state.profiles["Default (from [ai] secret)"] = {"type": "openai" if _t == "openai-compatible" else _t, "model": _a.get("model_name") or _a.get("model", ""), "base_url": _a.get("base_url", ""), "key": _a.get("api_key") or _a.get("key", "")}
     except Exception: pass
     try:  # [models.<name>] tables
-        for _n, _m in dict(st.secrets.get("models", {})).items(): st.session_state.profiles[_n] = dict(_m)
+        for _n, _m in dict(st.secrets.get("models", {})).items():
+            _entry = dict(_m); _t = _entry.get("type", "openai")
+            _entry["type"] = "openai" if _t == "openai-compatible" else _t
+            _entry["key"] = _entry.get("key") or _entry.get("api_key", "")
+            st.session_state.profiles[_n] = _entry
     except Exception: pass
     if len(st.session_state.profiles) > 1 and not core.env_cfg().get("key") and os.getenv("PROVIDER") != "ollama":
         st.session_state.profiles.pop("Default (from secrets)")
@@ -223,9 +229,19 @@ def _center_card(title, caption):
     return box
 
 with st.container(border=True):
-    _nl, _nr = st.columns([6, 1.5], vertical_alignment="center")
-    _nl.markdown('<span class="nav-brand">\U0001F697 Auto-Settle AI</span><span class="nav-sub"> &nbsp;·&nbsp; Customer portal / Insurer console</span>', unsafe_allow_html=True)
-    admin_on = _nr.toggle("Insurer / Admin mode", key="admin_on")
+    _nl, _nm, _nr = st.columns([4, 2.8, 1.4], vertical_alignment="center")
+    _nl.markdown('<span class="nav-brand">🚗 Auto-Settle AI</span><span class="nav-sub"> &nbsp;·&nbsp; Claims Engine</span>', unsafe_allow_html=True)
+    _avail = [k for k, v in st.session_state.profiles.items() if v is not None]
+    if len(_avail) > 1:
+        if "active_model_choice" not in st.session_state or st.session_state.active_model_choice not in _avail:
+            st.session_state.active_model_choice = _avail[0]
+        _chosen_model = _nm.radio("AI Engine", _avail, horizontal=True, label_visibility="collapsed", key="active_model_choice")
+    elif _avail:
+        _chosen_model = _avail[0]
+        _nm.markdown(f'<span style="font-size:0.85rem;color:#888">⚡ Engine: <b>{_chosen_model}</b></span>', unsafe_allow_html=True)
+    else:
+        _chosen_model = list(st.session_state.profiles.keys())[0] if st.session_state.profiles else None
+    admin_on = _nr.toggle("Admin mode", key="admin_on")
 
 is_admin = False
 if admin_on:
@@ -265,7 +281,7 @@ if is_admin:
             if st.button("Add model") and pn and pm: st.session_state.profiles[pn] = {"type": "openai" if pt == "openai-compatible" else pt, "model": pm, "base_url": pb, "key": pk}
             active = st.selectbox("Model used for claims", list(st.session_state.profiles))
         st.button("Log out", on_click=_logout)
-else: active = list(st.session_state.profiles)[0]
+else: active = _chosen_model or (list(st.session_state.profiles)[0] if st.session_state.profiles else None)
 cfg = st.session_state.profiles[active]
 
 # ---------- header ----------
