@@ -41,8 +41,89 @@ footer{visibility:hidden}
 .receipt .s{opacity:.6;font-size:.72rem;text-align:center;margin-top:8px}
 [data-testid="stChatMessage"]{border-radius:12px;border:1px solid var(--line);background:var(--card);padding:10px 14px}
 .stButton>button,.stDownloadButton>button{border-radius:10px;font-weight:600}
-.st-key-admin_on{display:flex;justify-content:flex-end}
-.nav-brand{font-weight:800;font-size:1.05rem;letter-spacing:-.01em}.nav-sub{opacity:.6;font-size:.82rem}
+.st-key-admin_on{display:flex !important;justify-content:flex-end !important;align-items:center !important}
+.st-key-admin_on label span{font-size:0.82rem !important;font-weight:600 !important;opacity:0.85 !important}
+.st-key-active_model_choice,.st-key-app_lang{display:flex !important;justify-content:center !important}
+
+/* Segmented Pill Control for st.radio (Navbar, Filters, Switchers) */
+div[data-testid="stRadio"]{margin-bottom:0 !important}
+div[data-testid="stRadio"] > div[role="radiogroup"]{
+    display:inline-flex !important;
+    flex-direction:row !important;
+    align-items:center !important;
+    background:rgba(128,128,128,0.10) !important;
+    border:1px solid var(--line) !important;
+    border-radius:999px !important;
+    padding:3px !important;
+    gap:3px !important;
+    width:fit-content !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"] > div:first-child{
+    position:absolute !important;
+    opacity:0 !important;
+    width:0 !important;
+    height:0 !important;
+    pointer-events:none !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]{
+    margin:0 !important;
+    padding:4px 13px !important;
+    border-radius:999px !important;
+    background:transparent !important;
+    cursor:pointer !important;
+    border:none !important;
+    transition:all 0.18s cubic-bezier(0.16,1,0.3,1) !important;
+    display:inline-flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"] div,
+div[data-testid="stRadio"] label[data-baseweb="radio"] p{
+    font-size:0.80rem !important;
+    font-weight:600 !important;
+    line-height:1.2 !important;
+    margin:0 !important;
+    padding:0 !important;
+    opacity:0.72;
+    transition:opacity 0.15s ease;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:hover{
+    background:rgba(128,128,128,0.16) !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:hover div,
+div[data-testid="stRadio"] label[data-baseweb="radio"]:hover p{
+    opacity:1 !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked){
+    background:var(--accent) !important;
+    box-shadow:0 2px 8px rgba(235,111,70,0.35) !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) div,
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p{
+    color:#ffffff !important;
+    opacity:1 !important;
+    font-weight:700 !important;
+}
+.st-key-app_lang label[data-baseweb="radio"]:has(input:checked){
+    background:rgba(128,128,128,0.32) !important;
+    box-shadow:0 1px 4px rgba(0,0,0,0.12) !important;
+}
+
+/* Sleek frosted navbar container */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.top-nav-anchor){
+    border-radius:14px !important;
+    background:rgba(128,128,128,0.04) !important;
+    backdrop-filter:blur(12px) !important;
+    -webkit-backdrop-filter:blur(12px) !important;
+    border:1px solid var(--line) !important;
+    box-shadow:0 2px 12px rgba(0,0,0,0.05) !important;
+    padding:6px 14px !important;
+    margin-bottom:16px !important;
+}
+.nav-brand-wrap{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.nav-brand{font-weight:800;font-size:1.05rem;letter-spacing:-.01em}
+.nav-badge-pill{display:inline-flex;align-items:center;gap:4px;font-size:0.68rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;background:rgba(34,165,90,0.12);color:var(--ok);border:1px solid rgba(34,165,90,0.35);padding:2px 8px;border-radius:999px}
+.nav-sub{opacity:.6;font-size:.82rem}
 .carload{max-width:560px;margin:18px auto;text-align:center}
 .road{position:relative;height:64px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--card)}
 .road:after{content:"";position:absolute;left:0;bottom:10px;width:200%;height:3px;background:repeating-linear-gradient(90deg,rgba(128,128,128,.7) 0 22px,transparent 22px 46px);animation:dash .5s linear infinite}
@@ -326,8 +407,8 @@ def _center_card(title, caption):
     return box
 
 with st.container(border=True):
-    _nl, _nm, _nlang, _nr = st.columns([3.4, 2.5, 1.4, 1.2], vertical_alignment="center")
-    _nl.markdown(f'<span class="nav-brand">🚗 Auto-Settle AI</span><span class="nav-sub"> &nbsp;·&nbsp; {T_("Claims Engine", "दावा इंजन")}</span>', unsafe_allow_html=True)
+    _nl, _nm, _nlang, _nr = st.columns([2.8, 3.0, 1.6, 1.4], vertical_alignment="center")
+    _nl.markdown(f'<div class="top-nav-anchor"></div><div class="nav-brand-wrap"><span class="nav-brand">🚗 Auto-Settle AI</span><span class="nav-badge-pill">● STP ACTIVE</span></div>', unsafe_allow_html=True)
     _avail = [k for k, v in st.session_state.profiles.items() if v is not None]
     if len(_avail) > 1:
         if "active_model_choice" not in st.session_state or st.session_state.active_model_choice not in _avail:
@@ -384,8 +465,7 @@ cfg = st.session_state.profiles[active]
 
 # ---------- header ----------
 st.markdown(f'<div class="hero"><span class="tag">{T_("⚡ Instant Touchless FNOL Claims Engine", "⚡ त्वरित टचलेस मोटर बीमा दावा इंजन")}</span><h1>Auto-Settle AI</h1>'
-            f'<p>{T_("Snap or upload a photo of your vehicle damage. An AI model reads the damage, fixed pricing rules calculate the claim, and you get an instant cash offer, or a human adjuster takes over if anything is uncertain.", "अपने वाहन की क्षति की फोटो अपलोड करें। एआई मॉडल क्षति की जांच करता है, निश्चित नियमों से दावे की गणना होती है, और आपको तुरंत नकद भुगतान मिलता है।")}</p>'
-            f'<div class="flow"><span>1 · {T_("Capture", "फोटो लें")}</span><span>2 · {T_("AI damage assessment", "क्षति विश्लेषण")}</span><span>3 · {T_("Rule-based pricing", "मूल्य निर्धारण")}</span><span>4 · {T_("Settle or escalate", "भुगतान या समीक्षा")}</span></div></div>', unsafe_allow_html=True)
+            f'<p>{T_("Snap or upload a photo of your vehicle damage. An AI model reads the damage, fixed pricing rules calculate the claim, and you get an instant cash offer, or a human adjuster takes over if anything is uncertain.", "अपने वाहन की क्षति की फोटो अपलोड करें। एआई मॉडल क्षति की जांच करता है, निश्चित नियमों से दावे की गणना होती है, और आपको तुरंत नकद भुगतान मिलता है।")}</p></div>', unsafe_allow_html=True)
 c0 = st.session_state.get("claim")
 stage = 0 if not c0 else (2 if c0["status"] == "negotiating" else 3)
 st.markdown('<div class="steps">' + "".join(f'<div class="step {"done" if i < stage else "on" if i == stage else ""}">{n}</div>' for i, n in enumerate([T_("① Upload", "① फोटो अपलोड"), T_("② Assessment", "② क्षति विश्लेषण"), T_("③ Offer", "③ त्वरित प्रस्ताव"), T_("④ Decision", "④ निपटान")])) + "</div>", unsafe_allow_html=True)
@@ -411,15 +491,16 @@ with T["New claim"]:
             claimed = st.selectbox(T_("Which part is damaged?", "कौन सा हिस्सा क्षतिग्रस्त है?"), list(core.PARTS))
             go = st.button(T_("Analyse damage", "क्षति का विश्लेषण करें"), type="primary", disabled=up is None)
             with st.expander(T_("⚡ Pre-filled sample cases (Instant 1-Click Demo)", "⚡ पूर्व-भरे नमूना केस (तुरंत 1-क्लिक डेमो)"), expanded=True if not c0 and not up else False):
-                st.caption(T_("Works 100% offline with bundled photos — perfect safety net if Wi-Fi or API throttles.", "ऑफ़लाइन नमूना तस्वीरों के साथ तुरंत काम करता है — वाई-फाई या एपीआई की आवश्यकता नहीं।"))
-                for sk, sc in SAMPLE_CASES.items():
-                    sc_col1, sc_col2 = st.columns([1, 2.5], vertical_alignment="center")
-                    with sc_col1:
+                st.caption(T_("Works 100% offline with bundled photos — 1-click end-to-end demo flow.", "ऑफ़लाइन तस्वीरों के साथ तुरंत काम करता है — बिना एपीआई 1-क्लिक डेमो।"))
+                sc_cols = st.columns(len(SAMPLE_CASES))
+                for idx, (sk, sc) in enumerate(SAMPLE_CASES.items()):
+                    with sc_cols[idx]:
                         if os.path.exists(sc["path"]): st.image(sc["path"], use_container_width=True)
-                    with sc_col2:
-                        st.markdown(f"**{T_(sc['title'], sc['title_hi'])}**")
+                        _title_clean = sc['title'].split(':', 1)[1].strip() if ':' in sc['title'] else sc['title']
+                        _title_hi_clean = sc['title_hi'].split(':', 1)[1].strip() if ':' in sc['title_hi'] else sc['title_hi']
+                        st.markdown(f"<div style='font-size:0.80rem;font-weight:700;margin:3px 0 1px;line-height:1.2'>{T_(_title_clean, _title_hi_clean)}</div>", unsafe_allow_html=True)
                         st.caption(T_(sc["desc"], sc["desc_hi"]))
-                        if st.button(T_("Load & Run Flow", "लोड करें और दावा चलाएं"), key="btn_" + sk, type="secondary", use_container_width=True):
+                        if st.button(T_("Run Flow", "दावा चलाएं"), key="btn_" + sk, type="secondary", use_container_width=True):
                             im = Image.open(sc["path"]).convert("RGB")
                             im.thumbnail((800, 800))
                             st.session_state.img = (im, sc["finding"].get("box"))
