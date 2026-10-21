@@ -1,5 +1,5 @@
 """Auto-Settle core logic. The AI only DESCRIBES damage; plain code sets every number and enforces every limit."""
-import base64, io, json, os, re
+import base64, io, json, os, re, time
 import requests
 
 PARTS = {"bumper": (6500, 3), "door": (9000, 4), "mirror": (3500, 1), "headlight": (5500, 1.5),
@@ -33,8 +33,16 @@ def ask_llm(prompt, img_jpeg=None, cfg=None):
         content = [{"type": "text", "text": prompt}]
         if b64: content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64}})
         client = OpenAI(api_key=cfg["key"], base_url=(cfg.get("base_url") or "https://api.openai.com/v1"))
-        r = client.chat.completions.create(model=cfg["model"], messages=[{"role": "user", "content": content}], max_tokens=MAX_TOKENS, timeout=120)
-        return r.choices[0].message.content
+        for attempt in range(3):
+            try:
+                r = client.chat.completions.create(model=cfg["model"], messages=[{"role": "user", "content": content}], max_tokens=MAX_TOKENS, timeout=120)
+                return r.choices[0].message.content
+            except Exception as ex:
+                s = str(ex).lower()
+                if ("429" in s or "quota" in s or "rate" in s or "exhausted" in s or "overloaded" in s or "busy" in s) and attempt < 2:
+                    time.sleep(3 * (attempt + 1))
+                    continue
+                raise
     import anthropic
     content = []
     if b64: content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
@@ -84,6 +92,7 @@ def analyse_image(jpeg, cfg=None):
     except ValueError:      # empty, truncated or non-JSON reply (JSONDecodeError is a ValueError): ask once more, strictly
         r = pj(ask_llm(VISION_PROMPT + " IMPORTANT: reply with ONE compact JSON object only. No markdown, no commentary.", jpeg, cfg))
     try:  # second pass: ask the model to look again for missed parts
+        time.sleep(1.5)  # brief pause to stay under burst rate limits
         r2 = pj(ask_llm("Earlier you listed these damaged parts: " + json.dumps(_items(r)) + ". Look at the image again, area by area. "
                         'Return ONLY JSON {"items":[every damaged part including any you missed, each {"part","type","severity","box":[x,y,width,height] fractions 0-1 tightly around that part}]}. Allowed parts: ' + "|".join(PARTS), jpeg, cfg))
         first = _items(r)
