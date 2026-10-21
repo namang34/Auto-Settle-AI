@@ -398,39 +398,67 @@ with T["New claim"]:
             st.markdown(part_table(c), unsafe_allow_html=True)
             st.caption("Every figure is set by fixed pricing rules from a mock parts and labour table, not by the AI.")
         with st.container(border=True):
-            st.markdown("#### Settlement conversation")
+            st.markdown("#### Quotation & Settlement Decision")
             if c["status"] == "escalated":
-                for r, m in st.session_state.chat: st.chat_message(r).write(m)
-                st.info("ℹ️ Automated negotiation is paused while this claim is under review by a human adjuster. You can approve this claim in the **Adjuster dashboard** tab (toggle Admin mode on).")
+                st.info("ℹ️ **Claim Under Review by Adjuster**: An in-person surveyor or desk adjuster is reviewing this file. No automated payment will be made until human inspection is completed.")
             elif c["status"] == "rejected":
-                for r, m in st.session_state.chat: st.chat_message(r).write(m)
-                st.error("❌ This claim was reviewed and rejected by the adjuster. No payout will be made.")
-            else:
-                lang = st.radio("Chat language", ["English", "Hindi"], horizontal=True)
-                for r, m in st.session_state.chat: st.chat_message(r).write(m)
-                if c["status"] == "negotiating":
-                    qr = quick_replies(c); picked = None
-                    for col, (k, label, text, prim) in zip(st.columns(len(qr)), qr):
-                        if col.button(label, key=k, type="primary" if prim else "secondary", use_container_width=True): picked = text
-                    typed = st.chat_input("Or type your own reply or counteroffer, e.g. 3500")
-                    if picked or typed: converse(c, picked or typed, lang)
-                elif c["status"] == "settled":
-                    rc = st.session_state.get("receipt")
-                    if rc:
-                        st.markdown(f'<div class="receipt"><div class="t">DIGITAL PAYMENT RECEIPT</div><div class="r"><span>Transaction ID</span><span>{rc["id"]}</span></div><div class="r"><span>Timestamp</span><span>{rc["ts"]}</span></div>'
-                                    f'<div class="r"><span>Paid to</span><span>{E(rc["to"])}</span></div><div class="r"><span>Garage estimate</span><span>{core.inr(rc["garage"])}</span></div><div class="r"><span>Saved vs garage estimate</span><span>{core.inr(rc["saved"])}</span></div>'
-                                    f'<div class="r"><span><b>Amount settled</b></span><span><b>{core.inr(rc["amt"])}</b></span></div><div class="s">SIMULATED UPI TRANSFER \u00b7 NO REAL MONEY MOVED</div></div>', unsafe_allow_html=True)
-                    else:
-                        st.success(f"Deal confirmed: {core.inr(c['amount'])}")
-                        upi = st.text_input("UPI ID for instant payout (simulated)", placeholder="name@bank")
-                        if st.button("Pay now", type="primary"):
-                            if re.fullmatch(r"[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}", upi):
-                                d = db_load(); q = next(x for x in d["queue"] if x["id"] == st.session_state.cid)
-                                q.update(state="Auto-settled", detail="SETTLED", paid=c["amount"], saved=c["gross"] - c["amount"]); db_save(d)
-                                log("PAYOUT", f"Simulated UPI transfer of {core.inr(c['amount'])} to **{upi[2:]}"); st.session_state.paid = True
-                                st.session_state.receipt = {"id": "TXN" + hashlib.sha1(f"{st.session_state.cid}{time.time()}".encode()).hexdigest()[:10].upper(), "ts": time.strftime("%d %b %Y, %H:%M:%S"), "to": "**" + upi[2:], "amt": c["amount"], "garage": c["gross"], "saved": c["gross"] - c["amount"]}
+                st.error("❌ **Claim Rejected**: An insurance adjuster reviewed this file and determined no payout is due.")
+            elif c["status"] == "settled":
+                rc = st.session_state.get("receipt")
+                if rc:
+                    st.markdown(f'<div class="receipt"><div class="t">DIGITAL PAYMENT RECEIPT</div><div class="r"><span>Transaction ID</span><span>{rc["id"]}</span></div><div class="r"><span>Timestamp</span><span>{rc["ts"]}</span></div>'
+                                f'<div class="r"><span>Paid to</span><span>{E(rc["to"])}</span></div><div class="r"><span>Garage estimate</span><span>{core.inr(rc["garage"])}</span></div><div class="r"><span>Saved vs garage estimate</span><span>{core.inr(rc["saved"])}</span></div>'
+                                f'<div class="r"><span><b>Amount settled</b></span><span><b>{core.inr(rc["amt"])}</b></span></div><div class="s">SIMULATED UPI TRANSFER \u00b7 NO REAL MONEY MOVED</div></div>', unsafe_allow_html=True)
+                else:
+                    st.success(f"Deal confirmed: {core.inr(c['amount'])}")
+                    upi = st.text_input("UPI ID for instant payout (simulated)", placeholder="name@bank")
+                    if st.button("Disburse payment via UPI", type="primary"):
+                        if re.fullmatch(r"[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}", upi):
+                            d = db_load(); q = next((x for x in d["queue"] if x["id"] == st.session_state.cid), None)
+                            if q: q.update(state="Auto-settled", detail="SETTLED", paid=c["amount"], saved=c["gross"] - c["amount"]); db_save(d)
+                            log("PAYOUT", f"Simulated UPI transfer of {core.inr(c['amount'])} to **{upi[2:]}"); st.session_state.paid = True
+                            st.session_state.receipt = {"id": "TXN" + hashlib.sha1(f"{st.session_state.cid}{time.time()}".encode()).hexdigest()[:10].upper(), "ts": time.strftime("%d %b %Y, %H:%M:%S"), "to": "**" + upi[2:], "amt": c["amount"], "garage": c["gross"], "saved": c["gross"] - c["amount"]}
+                            st.balloons(); st.rerun()
+                        else: st.error("Please enter a valid UPI ID (e.g. name@bank).")
+            elif c["status"] == "negotiating":
+                col_left, col_right = st.columns(2, gap="medium")
+                with col_left:
+                    with st.container(border=True):
+                        st.markdown(f'<span class="pill ok">⚡ Recommended: Instant Settlement</span><div class="story-amt" style="color:var(--ok);margin:8px 0">{core.inr(c["offer"])}</div>', unsafe_allow_html=True)
+                        st.markdown("""
+- **Instant UPI transfer** directly to your bank account
+- **Zero garage queues:** Fix on your own schedule or keep the cash
+- **100% paperless:** Straight-through approval in under 60 seconds
+                        """)
+                        upi_in = st.text_input("Enter UPI ID for instant credit", placeholder="e.g. yourname@okhdfcbank", key="instant_upi")
+                        if st.button(f"Accept {core.inr(c['offer'])} & Disburse Now", type="primary", use_container_width=True):
+                            if re.fullmatch(r"[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}", upi_in.strip()):
+                                c["status"], c["amount"] = "settled", c["offer"]
+                                d = db_load(); q = next((x for x in d["queue"] if x["id"] == st.session_state.cid), None)
+                                if q: q.update(state="Auto-settled", detail="SETTLED", paid=c["amount"], saved=c["gross"] - c["amount"]); db_save(d)
+                                log("DECISION", f"SETTLED at {core.inr(c['offer'])} (Instant Cash Settlement)")
+                                log("PAYOUT", f"Simulated UPI transfer of {core.inr(c['amount'])} to **{upi_in.strip()[2:]}")
+                                st.session_state.paid = True
+                                st.session_state.receipt = {"id": "TXN" + hashlib.sha1(f"{st.session_state.cid}{time.time()}".encode()).hexdigest()[:10].upper(), "ts": time.strftime("%d %b %Y, %H:%M:%S"), "to": "**" + upi_in.strip()[2:], "amt": c["amount"], "garage": c["gross"], "saved": c["gross"] - c["amount"]}
                                 st.balloons(); st.rerun()
-                            else: st.error("That UPI ID does not look valid.")
+                            else:
+                                st.error("Please enter a valid UPI ID (e.g. name@bank) to receive your payment.")
+                with col_right:
+                    with st.container(border=True):
+                        st.markdown(f'<span class="pill warn">🛠️ Traditional Garage Route</span><div class="story-amt" style="margin:8px 0">{core.inr(c["net"])}</div>', unsafe_allow_html=True)
+                        st.markdown("""
+- Prefer taking your car to an authorized network garage?
+- Disagree with the AI damage assessment or suspect hidden internal damage?
+- Request an on-site physical inspection by an IRDAI-licensed surveyor.
+                        """)
+                        st.markdown("<div style='height:36px'></div>", unsafe_allow_html=True)
+                        if st.button("Request In-Person Adjuster Review", type="secondary", use_container_width=True):
+                            c["status"] = "escalated"
+                            c["flags"].append("Customer requested in-person surveyor inspection over cash settlement")
+                            d = db_load(); q = next((x for x in d["queue"] if x["id"] == st.session_state.cid), None)
+                            if q: q.update(state="Needs review", detail="ESCALATED: In-person surveyor requested"); db_save(d)
+                            log("DECISION", "ESCALATED: Customer requested in-person surveyor inspection")
+                            st.rerun()
 
 with T["Assumptions"]:
     st.markdown("#### How it works")
