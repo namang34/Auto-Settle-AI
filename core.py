@@ -48,9 +48,16 @@ def score(found, truth):
 
 VISION_PROMPT = ("You are a careful motor-insurance vehicle damage inspector. Examine the WHOLE image systematically, area by area (front bumper, grille, bonnet, both fenders, headlights, doors, mirrors, windshield, wheels and tyres, rear). List EVERY visibly damaged, torn or missing part in items, including partly visible ones, and do not stop at the most obvious damage. Return ONLY JSON: "
   '{"part": one of %s, "type": one of dent|scratch|crack|broken, "severity": one of minor|moderate|severe, '
-  '"items": [{"part","type","severity"} for EVERY damaged part], "confidence": 0-100 integer, '
+  '"items": [{"part","type","severity","box": [x,y,width,height] fractions 0-1 tightly around THAT part} for EVERY damaged part], "confidence": 0-100 integer, '
   '"quality_ok": false if blurry, dark, cropped or not a vehicle, "box": [x,y,width,height] fractions 0-1 around the worst damage, '
   '"notes": one short sentence}. The top-level part/type/severity describe the worst damage.') % "|".join(PARTS)
+
+def valid_box(b):
+    """A box is [x, y, width, height] as fractions of the image, inside the frame."""
+    try:
+        x, y, w, h = [float(v) for v in b]
+        return 0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 and 0 < h <= 1 and x + w <= 1.02 and y + h <= 1.02
+    except Exception: return False
 
 def analyse_image(jpeg, cfg=None):
     def pj(t):
@@ -68,9 +75,17 @@ def analyse_image(jpeg, cfg=None):
     r = pj(ask_llm(VISION_PROMPT, jpeg, cfg))
     try:  # second pass: ask the model to look again for missed parts
         r2 = pj(ask_llm("Earlier you listed these damaged parts: " + json.dumps(r.get("items") or [r]) + ". Look at the image again, area by area. "
-                        'Return ONLY JSON {"items":[every damaged part including any you missed, each {"part","type","severity"}]}. Allowed parts: ' + "|".join(PARTS), jpeg, cfg))
-        old = {i.get("part") for i in (r.get("items") or [r])}
-        if len(r2.get("items", [])) >= len(old): r["added"] = len({i.get("part") for i in r2["items"]} - old); r["items"] = r2["items"]
+                        'Return ONLY JSON {"items":[every damaged part including any you missed, each {"part","type","severity","box":[x,y,width,height] fractions 0-1 tightly around that part}]}. Allowed parts: ' + "|".join(PARTS), jpeg, cfg))
+        first = r.get("items") or [r]
+        old = {i.get("part") for i in first}
+        if len(r2.get("items", [])) >= len(old):
+            r["added"] = len({i.get("part") for i in r2["items"]} - old)
+            for i in r2["items"]:                                   # keep a box if the second pass dropped it
+                if not valid_box(i.get("box")):
+                    prev = next((p for p in first if p.get("part") == i.get("part") and valid_box(p.get("box"))), None)
+                    if prev: i["box"] = prev["box"]
+                    elif i.get("part") == r.get("part") and valid_box(r.get("box")): i["box"] = r["box"]
+            r["items"] = r2["items"]
     except Exception: pass
     return r
 
@@ -87,13 +102,15 @@ def _num(v, default=0.0):
 def assess(f, claimed, policy, rails, extra_flags=()):
     raw_items = f.get("items") or [f]
     unknown = sorted({str(i.get("part")) for i in raw_items if i.get("part") not in PARTS})   # parts we cannot price
-    items = [{"part": i.get("part") if i.get("part") in PARTS else "bumper", "type": i.get("type"), "severity": i.get("severity")}
-             for i in raw_items]
+    items = [{"part": i.get("part") if i.get("part") in PARTS else "bumper", "type": i.get("type"), "severity": i.get("severity"),
+              "box": [float(v) for v in i["box"]] if valid_box(i.get("box")) else None} for i in raw_items]
+    dep = min(.5, max(0, _num(policy["age"])) * .05)     # illustrative: 5% per year, max 50%
     raw = lab = 0.0
     for i in items:
         cost, hrs = PARTS[i["part"]]; sv = SEV.get(i["severity"], .6); tp = TYP.get(i["type"], .8)
-        raw += cost * sv * tp; lab += hrs * RATE * (.5 + sv / 2)
-    dep = min(.5, max(0, policy["age"]) * .05)           # illustrative: 5% per year, max 50%
+        p_raw = cost * sv * tp; p_lab = hrs * RATE * (.5 + sv / 2)
+        raw += p_raw; lab += p_lab
+        i["parts_cost"], i["labour"] = p_raw * (1 - dep), p_lab; i["est"] = i["parts_cost"] + p_lab   # per-part estimate shown in the UI
     parts = raw * (1 - dep); gross = parts + lab; net = max(0.0, gross - policy["excess"])
     conf = max(0, min(100, round(_num(f.get("confidence", 0)))))
     flags = list(extra_flags)

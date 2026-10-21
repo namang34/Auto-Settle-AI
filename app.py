@@ -1,7 +1,7 @@
 import hashlib, hmac, html, io, json, os, re, tempfile, time
 from contextlib import contextmanager
 import streamlit as st
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import core
 
 st.set_page_config(page_title="Auto-Settle AI", page_icon="\u26a1", layout="wide", initial_sidebar_state="collapsed")
@@ -50,6 +50,15 @@ footer{visibility:hidden}
 @keyframes drive{0%{left:-70px;transform:scaleX(-1) translateY(0)}25%{transform:scaleX(-1) translateY(-3px)}50%{transform:scaleX(-1) translateY(0)}75%{transform:scaleX(-1) translateY(-3px)}100%{left:100%;transform:scaleX(-1) translateY(0)}}
 @keyframes dash{to{transform:translateX(-46px)}}
 .carmsg{margin-top:10px;font-weight:600;opacity:.8}
+.meter{margin:10px 0 6px}.meter-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.meter-val{font-weight:700;font-size:.85rem}
+.meter-track{position:relative;height:10px;border-radius:999px;background:rgba(128,128,128,.22);margin-top:6px}
+.meter-fill{height:100%;border-radius:999px}.meter-fill.ok{background:var(--ok)}.meter-fill.warn{background:var(--warn)}.meter-fill.bad{background:var(--bad)}
+.meter-val.ok{color:var(--ok)}.meter-val.warn{color:var(--warn)}.meter-val.bad{color:var(--bad)}
+.meter-mark{position:absolute;top:-4px;width:2px;height:18px;background:currentColor;opacity:.65}.meter-foot{font-size:.7rem;opacity:.55;margin-top:4px}
+.ptable{width:100%;border-collapse:collapse;font-size:.9rem}.ptable th{text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;opacity:.65;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+.ptable td{padding:9px 8px;border-bottom:1px dotted var(--line);vertical-align:middle}.ptable .n{text-align:right;white-space:nowrap}.ptable tr.tot td{font-weight:800;border-bottom:none}
+.share{display:flex;align-items:center;gap:8px}.share-bar{flex:1;height:8px;border-radius:999px;background:rgba(128,128,128,.2);overflow:hidden;min-width:60px}.share-bar i{display:block;height:100%;background:var(--accent)}
+.sev-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}.legend{font-size:.78rem;opacity:.75;margin:2px 0 6px}
 </style>""", unsafe_allow_html=True)
 
 DB = "claims_db.json"  # claim queue, audit trail, photo fingerprints
@@ -93,6 +102,49 @@ def car_loading(msg):
     ph.markdown(f'<div class="carload"><div class="road"><div class="car">\U0001F697</div></div><div class="carmsg">{E(msg)}</div></div>', unsafe_allow_html=True)
     try: yield
     finally: ph.empty()
+
+SEV_COL = {"minor": "#22A55A", "moderate": "#F59E0B", "severe": "#EF4444"}
+
+def meter(conf, min_conf):
+    """Certainty meter: bar = AI confidence, marker = minimum needed for instant settlement."""
+    k, t = ("ok", "High certainty") if conf >= max(85, min_conf + 10) else ("warn", "Moderate certainty") if conf >= min_conf else ("bad", "Low certainty: needs review")
+    return (f'<div class="meter"><div class="meter-top"><span class="lbl">AI certainty</span><span class="meter-val {k}">{t} · {conf}%</span></div>'
+            f'<div class="meter-track"><div class="meter-fill {k}" style="width:{conf}%"></div><div class="meter-mark" style="left:{min_conf}%" title="Minimum for instant settlement"></div></div>'
+            f'<div class="meter-foot">Marker: minimum {min_conf:.0f}% needed for instant settlement</div></div>')
+
+def _font(size):
+    try: return ImageFont.load_default(size=size)
+    except Exception: return ImageFont.load_default()
+
+def annotate(im, items, fallback_box=None):
+    """Draw one labelled box per detected part, coloured by severity. Returns (image, boxes_drawn)."""
+    im = im.copy(); w, h = im.size; d = ImageDraw.Draw(im); f = _font(max(16, w // 34)); lw = max(3, w // 260); n = 0
+    for i in items:
+        b = i.get("box")
+        if not core.valid_box(b): continue
+        x, y, bw, bh = b; x0, y0, x1, y1 = x * w, y * h, min(w - 1, (x + bw) * w), min(h - 1, (y + bh) * h)
+        col = SEV_COL.get(i.get("severity"), "#EB6F46"); d.rectangle([x0, y0, x1, y1], outline=col, width=lw)
+        label = str(i["part"]).title(); l, t, r, bt = d.textbbox((0, 0), label, font=f); tw, th, pad = r - l, bt - t, 4
+        ty = y0 - th - 2 * pad if y0 - th - 2 * pad >= 0 else y0
+        d.rectangle([x0, ty, x0 + tw + 2 * pad, ty + th + 2 * pad], fill=col)
+        d.text((x0 + pad - l, ty + pad - t), label, fill="#1A1A1A" if i.get("severity") == "moderate" else "white", font=f); n += 1
+    if n == 0 and core.valid_box(fallback_box):                 # older single-box answers
+        x, y, bw, bh = fallback_box; d.rectangle([x * w, y * h, min(w - 1, (x + bw) * w), min(h - 1, (y + bh) * h)], outline="#EB6F46", width=lw + 1)
+    return im, n
+
+def part_table(c):
+    """Per-part estimate table: where every rupee of the repair estimate comes from."""
+    g = c["gross"] or 1; rows = ""
+    for i in c["items"]:
+        col = SEV_COL.get(i["severity"], "#999"); pct = i["est"] / g * 100
+        rows += (f'<tr><td>{EM.get(i["part"], "\U0001F527")} <b>{E(str(i["part"]).title())}</b></td><td>{E(str(i["type"]).title())}</td>'
+                 f'<td><span class="sev-dot" style="background:{col}"></span>{E(str(i["severity"]).title())}</td><td class="n">{core.inr(i["parts_cost"])}</td><td class="n">{core.inr(i["labour"])}</td>'
+                 f'<td class="n"><b>{core.inr(i["est"])}</b></td><td><div class="share"><div class="share-bar"><i style="width:{pct:.0f}%"></i></div><span>{pct:.0f}%</span></div></td></tr>')
+    ded = min(c["excess"], c["gross"])
+    rows += (f'<tr class="tot"><td colspan="5">Repair estimate (parts after {c["dep"]*100:.0f}% depreciation + labour)</td><td class="n">{core.inr(c["gross"])}</td><td></td></tr>'
+             f'<tr><td colspan="5">Less policy excess</td><td class="n">−{core.inr(ded)}</td><td></td></tr>'
+             f'<tr class="tot"><td colspan="5">Net claim value</td><td class="n">{core.inr(c["net"])}</td><td></td></tr>')
+    return ('<table class="ptable"><thead><tr><th>Part</th><th>Damage</th><th>Severity</th><th class="n">Parts</th><th class="n">Labour</th><th class="n">Estimate</th><th>Share</th></tr></thead><tbody>' + rows + '</tbody></table>')
 
 # ---------- secrets and models (backend unchanged) ----------
 PW = os.getenv("ADMIN_PASSWORD", "")
@@ -209,7 +261,7 @@ with T["New claim"]:
                 mp = st.multiselect("Damaged parts", list(core.PARTS), ["bumper"]); mt = st.selectbox("Damage type", list(core.TYP)); ms = st.selectbox("Severity", list(core.SEV))
                 mc = st.slider("Confidence %", 0, 100, 85); mq = st.checkbox("Photo is clear", True)
                 if st.button("Use manual findings") and mp:
-                    start_claim({"part": mp[0], "type": mt, "severity": ms, "confidence": mc, "quality_ok": mq, "items": [{"part": p, "type": mt, "severity": ms} for p in mp], "notes": "Manually entered findings"}, claimed)
+                    start_claim({"part": mp[0], "type": mt, "severity": ms, "confidence": mc, "quality_ok": mq, "items": [{"part": p, "type": mt, "severity": ms} for p in mp], "notes": "Manually entered findings"}, claimed); st.session_state.pop("img", None)
     with R:
         with st.container(border=True):
             st.markdown("#### Your photo")
@@ -243,12 +295,11 @@ with T["New claim"]:
             with st.container(border=True):
                 st.markdown("#### Damage breakdown")
                 st.markdown("".join(f'<span class="chip">{EM.get(i["part"], "\U0001F527")} <b>{E(str(i["part"]).title())}</b> <i>|</i> {E(str(i["type"]).title())} <i>|</i> {SEVE.get(i["severity"], E(str(i["severity"])))}</span>' for i in c["items"]), unsafe_allow_html=True)
-                st.markdown(f'<div class="lbl" style="margin-top:8px">AI confidence {c["conf"]}%' + (f' \u00b7 Risk score {c["risk"]}/100' if is_admin else "") + "</div>", unsafe_allow_html=True)
+                st.markdown(meter(c["conf"], rails["min_conf"]) + (f'<div class="lbl">Risk score {c["risk"]}/100</div>' if is_admin else ""), unsafe_allow_html=True)
                 if "img" in st.session_state:
-                    im, box = st.session_state.img; im = im.copy()
-                    if isinstance(box, list) and len(box) == 4:
-                        w, h = im.size; x, y, bw, bh = box; ImageDraw.Draw(im).rectangle([x*w, y*h, (x+bw)*w, (y+bh)*h], outline="#EB6F46", width=5)
+                    im, box = st.session_state.img; im, n_boxes = annotate(im, c["items"], box)
                     st.image(im, caption="Where the AI sees damage", width=420)
+                    if n_boxes: st.markdown('<div class="legend"><span class="sev-dot" style="background:#22A55A"></span>Minor &nbsp; <span class="sev-dot" style="background:#F59E0B"></span>Moderate &nbsp; <span class="sev-dot" style="background:#EF4444"></span>Severe</div>', unsafe_allow_html=True)
                 if c["notes"]: st.caption(c["notes"])
         with B:
             with st.container(border=True):
@@ -258,6 +309,10 @@ with T["New claim"]:
                             f'<div class="callout"><div class="lbl">Net claim value</div><div class="big">{core.inr(c["net"])}</div></div>'
                             f'<div class="callout"><div class="lbl">Approved settlement band ({rails["lo"]*100:.0f}% \u2013 {rails["hi"]*100:.0f}%)</div><div class="big">{core.inr(c["lo"])} \u2013 {core.inr(c["hi"])}</div></div>', unsafe_allow_html=True)
                 st.caption(f"Parts {core.inr(c['parts'])} + labour {core.inr(c['labour'])}. Estimate band {core.inr(c['band'][0])} to {core.inr(c['band'][1])}.")
+        with st.container(border=True):
+            st.markdown("#### Where the estimate comes from")
+            st.markdown(part_table(c), unsafe_allow_html=True)
+            st.caption("Every figure is set by fixed pricing rules from a mock parts and labour table, not by the AI.")
         if c["status"] != "escalated":
             with st.container(border=True):
                 st.markdown("#### Settlement conversation")

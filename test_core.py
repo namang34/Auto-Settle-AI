@@ -121,3 +121,24 @@ def test_clean_minor_bumper_dent_gets_an_offer_in_band():
 
 def test_score_precision_recall():
     assert core.score(["bumper", "door"], ["bumper", "fender"]) == (0.5, 0.5)
+
+
+# ---------- per-part estimates and boxes ----------
+def test_per_part_estimates_sum_to_gross():
+    f = finding(items=[{"part": "bumper", "type": "dent", "severity": "moderate"}, {"part": "door", "type": "scratch", "severity": "minor"}])
+    c = core.assess(f, "bumper", POLICY, RAILS)
+    assert abs(sum(i["est"] for i in c["items"]) - c["gross"]) < 1e-6
+    assert all(i["est"] == pytest.approx(i["parts_cost"] + i["labour"]) for i in c["items"])
+
+
+@pytest.mark.parametrize("b,ok", [([0.1, 0.2, 0.3, 0.4], True), ([0, 0, 1, 1], True), (None, False), ([0.1, 0.2], False),
+                                  ([0.9, 0.9, 0.5, 0.5], False), ([-0.1, 0, 0.2, 0.2], False), (["a", "b", "c", "d"], False), ([0.1, 0.1, 0, 0.2], False)])
+def test_valid_box(b, ok):
+    assert core.valid_box(b) is ok
+
+
+def test_boxes_pass_through_assess_and_bad_boxes_are_dropped():
+    f = finding(items=[{"part": "bumper", "type": "dent", "severity": "minor", "box": [0.1, 0.5, 0.4, 0.2]},
+                       {"part": "door", "type": "dent", "severity": "minor", "box": [5, 5, 5, 5]}])
+    c = core.assess(f, "bumper", POLICY, RAILS)
+    assert c["items"][0]["box"] == [0.1, 0.5, 0.4, 0.2] and c["items"][1]["box"] is None
