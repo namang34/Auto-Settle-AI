@@ -220,6 +220,20 @@ def photo_quality(raw):
 
 EM = {"bumper": "\U0001F697", "door": "\U0001F6AA", "mirror": "\U0001FA9E", "headlight": "\U0001F4A1", "fender": "\U0001F699", "bonnet": "\U0001F698", "windshield": "\U0001FA9F", "grille": "\U0001F532", "wheel": "\U0001F6DE", "taillight": "\U0001F526", "boot": "\U0001F9F3"}
 SEVE = {"minor": "\U0001F7E2 Minor", "moderate": "\U0001F7E1 Moderate", "severe": "\U0001F534 Severe"}
+PART_OPTIONS = [
+    ("auto", "🤖 Unsure · Let AI Auto-Detect (Recommended)", "🤖 निश्चित नहीं · AI द्वारा स्वतः पहचानें (अनुशंसित)"),
+    ("bumper", "🚗 Front / Rear Bumper", "🚗 बम्पर (Bumper)"),
+    ("door", "🚪 Side Door Panel", "🚪 दरवाज़ा (Door Panel)"),
+    ("fender", "🛡️ Fender / Quarter Panel", "🛡️ फेंडर (Fender)"),
+    ("headlight", "💡 Headlight / Fog Light", "💡 हेडलाइट (Headlight)"),
+    ("bonnet", "🚘 Bonnet / Engine Hood", "🚘 बोनट (Hood)"),
+    ("windshield", "🪟 Windshield / Glass", "🪟 विंडशील्ड (Windshield)"),
+    ("mirror", "🪞 Side View Mirror", "🪞 साइड मिरर (Mirror)"),
+    ("taillight", "🚨 Taillight / Brake Light", "🚨 बैक लाइट (Taillight)"),
+    ("boot", "📦 Boot / Trunk Lid", "📦 डिक्की (Trunk)"),
+    ("grille", "🏁 Front Grille", "🏁 ग्रिल (Grille)"),
+    ("wheel", "🛞 Wheel Rim / Alloy", "🛞 पहिया रिम (Wheel)")
+]
 def cell(label, value, cls="val"): return f'<div class="fcell"><div class="lbl">{label}</div><div class="{cls}">{value}</div></div>'
 
 CAR_OUTLINE_SVG = (
@@ -547,7 +561,15 @@ with T["New claim"]:
         with st.container(border=True):
             st.markdown(f"#### {T_('① Capture the damage', '① क्षति की फोटो अपलोड करें')}")
             up = st.file_uploader(T_("Photo or short video of the damage", "क्षति की फोटो या छोटा वीडियो"), type=["jpg", "jpeg", "png", "webp", "mp4", "mov"])
-            claimed = st.selectbox(T_("Which part is damaged?", "कौन सा हिस्सा क्षतिग्रस्त है?"), list(core.PARTS))
+            _part_keys = [p[0] for p in PART_OPTIONS]
+            claimed = st.selectbox(
+                T_("Which part is damaged?", "कौन सा हिस्सा क्षतिग्रस्त है?"),
+                _part_keys,
+                format_func=lambda k: T_(next((p[1] for p in PART_OPTIONS if p[0] == k), k), next((p[2] for p in PART_OPTIONS if p[0] == k), k)),
+                index=0
+            )
+            if claimed == "auto":
+                st.caption(T_("✨ **Smart Auto-Detect Active:** Unsure about vehicle panel names? The AI vision model will automatically inspect and identify all damaged parts directly from your photo.", "✨ **स्मार्ट डिटेक्शन सक्रिय:** वाहन के पुर्जों को लेकर अनिश्चित हैं? एआई मॉडल आपकी फोटो से सभी क्षतिग्रस्त भागों की स्वतः पहचान करेगा।"))
             go = st.button(T_("Analyse damage", "क्षति का विश्लेषण करें"), type="primary", disabled=up is None)
             with st.expander(T_("⚡ Pre-filled sample cases (Instant 1-Click Demo)", "⚡ पूर्व-भरे नमूना केस (तुरंत 1-क्लिक डेमो)"), expanded=True if not c0 and not up else False):
                 st.caption(T_("Works 100% offline with bundled photos — 1-click end-to-end demo flow.", "ऑफ़लाइन तस्वीरों के साथ तुरंत काम करता है — बिना एपीआई 1-क्लिक डेमो।"))
@@ -610,8 +632,9 @@ with T["New claim"]:
             ck, ct = cert_level(c["conf"], rails["min_conf"]); ref = st.session_state.get("cid", "")
             SL, SR = st.columns([1.7, 1], gap="large", vertical_alignment="center")
             with SL:
-                st.markdown(f'<div class="story-k">Claim summary{" \u00b7 " + E(ref) if ref else ""}</div><div class="story-h">{E(head)}</div>'
-                            f'<div class="story-sub">Repair estimate <b>{core.inr(c["gross"])}</b> \u00b7 Net claim <b>{core.inr(c["net"])}</b> \u00b7 <span class="pill {ck}" style="margin:0">{ct} {c["conf"]}%</span></div>', unsafe_allow_html=True)
+                _auto_badge = f' <span class="pill ok" style="margin:0 0 0 6px">🤖 {T_("AI Auto-Detected", "एआई द्वारा स्वतः पहचान")}</span>' if c.get("claimed") == "auto" else ""
+                st.markdown(f'<div class="story-k">Claim summary{" · " + E(ref) if ref else ""}{_auto_badge}</div><div class="story-h">{E(head)}</div>'
+                            f'<div class="story-sub">Repair estimate <b>{core.inr(c["gross"])}</b> · Net claim <b>{core.inr(c["net"])}</b> · <span class="pill {ck}" style="margin:0">{ct} {c["conf"]}%</span></div>', unsafe_allow_html=True)
             with SR:
                 rc = st.session_state.get("receipt")
                 if c["status"] == "escalated":

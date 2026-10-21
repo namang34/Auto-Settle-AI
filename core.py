@@ -167,7 +167,7 @@ def assess(f, claimed, policy, rails, extra_flags=()):
     if conf < rails["min_conf"]: flags.append(f"AI confidence {conf}% is below the {rails['min_conf']}% threshold")
     if any(i["severity"] == "severe" for i in items): flags.append("Severe damage needs a human inspection")
     if net > rails["cap"]: flags.append(f"Net claim {inr(net)} exceeds the auto-settle cap {inr(rails['cap'])}")
-    if claimed not in [i["part"] for i in items]:
+    if claimed and not str(claimed).lower().startswith(("auto", "unsure", "not sure", "🤖")) and claimed not in [i["part"] for i in items]:
         flags.append(f"Customer claimed '{claimed}' but the photo shows {', '.join(i['part'] for i in items)} (possible mismatch)")
     if f.get("added", 0) >= 2: flags.append(f"AI found {f['added']} more damaged parts on a second look, so its first answer was unstable")
     if not policy["active"]: flags.append("Policy is not active, so a human must confirm cover")
@@ -178,7 +178,7 @@ def assess(f, claimed, policy, rails, extra_flags=()):
     return {"items": items, "parts": parts, "labour": lab, "gross": gross, "net": net, "dep": dep, "excess": policy["excess"],
             "lo": net * rails["lo"], "hi": net * rails["hi"], "band": (net * (1 - band), net * (1 + band)),
             "flags": flags, "risk": risk, "conf": conf, "notes": f.get("notes", ""),
-            "status": "escalated" if flags else "negotiating", "offer": net * rails["lo"], "round": 0, "amount": None}
+            "status": "escalated" if flags else "negotiating", "offer": net * rails["lo"], "round": 0, "amount": None, "claimed": claimed}
 
 # ---------- negotiation: code decides every number ----------
 INJECT = r"\b(?:ignore (?:all|previous|your)|system prompt|you are now|pretend)\b|\boverride (?:your|all|the) (?:rules|instructions|guardrails)\b"
