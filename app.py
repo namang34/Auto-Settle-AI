@@ -77,7 +77,7 @@ def to_jpeg(raw, is_video):
         if not ok: raise ValueError("Could not read the video")
         img = Image.fromarray(fr[:, :, ::-1])
     else: img = Image.open(io.BytesIO(raw)).convert("RGB")
-    img.thumbnail((1280, 1280)); b = io.BytesIO(); img.save(b, "JPEG", quality=85); return img, b.getvalue()
+    img.thumbnail((800, 800)); b = io.BytesIO(); img.save(b, "JPEG", quality=80); return img, b.getvalue()
 
 @st.cache_data(show_spinner=False)
 def photo_quality(raw):

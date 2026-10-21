@@ -33,12 +33,18 @@ def ask_llm(prompt, img_jpeg=None, cfg=None):
         content = [{"type": "text", "text": prompt}]
         if b64: content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64}})
         client = OpenAI(api_key=cfg["key"], base_url=(cfg.get("base_url") or "https://api.openai.com/v1"))
+        call_kwargs = {"model": cfg["model"], "messages": [{"role": "user", "content": content}], "max_tokens": MAX_TOKENS, "timeout": 60}
+        if "gemini" in str(cfg.get("model", "")).lower():
+            call_kwargs["reasoning_effort"] = "low"  # drastically reduces Gemini 3.8 thinking latency
         for attempt in range(3):
             try:
-                r = client.chat.completions.create(model=cfg["model"], messages=[{"role": "user", "content": content}], max_tokens=MAX_TOKENS, timeout=120)
+                r = client.chat.completions.create(**call_kwargs)
                 return r.choices[0].message.content
             except Exception as ex:
                 s = str(ex).lower()
+                if "reasoning_effort" in s:
+                    call_kwargs.pop("reasoning_effort", None)
+                    continue
                 if ("429" in s or "quota" in s or "rate" in s or "exhausted" in s or "overloaded" in s or "busy" in s) and attempt < 2:
                     time.sleep(3 * (attempt + 1))
                     continue
