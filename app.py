@@ -158,7 +158,7 @@ def part_table(c):
     return ('<table class="ptable"><thead><tr><th>Part</th><th>Damage</th><th>Severity</th><th class="n">Parts</th><th class="n">Labour</th><th class="n">Estimate</th><th>Share</th></tr></thead><tbody>' + rows + '</tbody></table>')
 
 # ---------- secrets and models (backend unchanged) ----------
-PW = os.getenv("ADMIN_PASSWORD", "")
+PW = st.secrets.get("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", "")
 if "profiles" not in st.session_state:
     st.session_state.profiles = {"Default (from secrets)": None}
     try:  # [ai] table, e.g. type / model_name / base_url / api_key
@@ -166,10 +166,14 @@ if "profiles" not in st.session_state:
         st.session_state.profiles["Default (from [ai] secret)"] = {"type": "openai" if _t == "openai-compatible" else _t, "model": _a.get("model_name") or _a.get("model", ""), "base_url": _a.get("base_url", ""), "key": _a.get("api_key") or _a.get("key", "")}
     except Exception: pass
     try:  # [models.<name>] tables
-        for _n, _m in dict(st.secrets.get("models", {})).items(): st.session_state.profiles[_n] = dict(_m)
+        for _n, _m in dict(st.secrets.get("models", {})).items():
+            _entry = dict(_m); _t = _entry.get("type", "openai")
+            _entry["type"] = "openai" if _t == "openai-compatible" else _t
+            st.session_state.profiles[_n] = _entry
     except Exception: pass
     if len(st.session_state.profiles) > 1 and not core.env_cfg().get("key") and os.getenv("PROVIDER") != "ollama":
         st.session_state.profiles.pop("Default (from secrets)")
+st.session_state.profiles = {k: v for k, v in st.session_state.profiles.items() if v is not None}
 rails = {"lo": .75, "hi": .90, "step": .04, "max_rounds": 3, "min_conf": 70, "cap": 25000}
 policy = {"active": True, "limit": 50000, "excess": 1000, "age": 3, "claims": 0}
 # ---------- start-up splash: a car drives across once per visit ----------
@@ -190,9 +194,19 @@ def _center_card(title, caption):
     return box
 
 with st.container(border=True):
-    _nl, _nr = st.columns([6, 1.5], vertical_alignment="center")
-    _nl.markdown('<span class="nav-brand">\U0001F697 Auto-Settle AI</span><span class="nav-sub"> &nbsp;·&nbsp; Customer portal / Insurer console</span>', unsafe_allow_html=True)
-    admin_on = _nr.toggle("Insurer / Admin mode", key="admin_on")
+    _nl, _nm, _nr = st.columns([4, 2.8, 1.4], vertical_alignment="center")
+    _nl.markdown('<span class="nav-brand">🚗 Auto-Settle AI</span><span class="nav-sub"> &nbsp;·&nbsp; Claims Engine</span>', unsafe_allow_html=True)
+    _avail = [k for k, v in st.session_state.profiles.items() if v is not None]
+    if len(_avail) > 1:
+        if "active_model_choice" not in st.session_state or st.session_state.active_model_choice not in _avail:
+            st.session_state.active_model_choice = _avail[0]
+        _chosen_model = _nm.radio("AI Engine", _avail, horizontal=True, label_visibility="collapsed", key="active_model_choice")
+    elif _avail:
+        _chosen_model = _avail[0]
+        _nm.markdown(f'<span style="font-size:0.85rem;color:#888">⚡ Engine: <b>{_chosen_model}</b></span>', unsafe_allow_html=True)
+    else:
+        _chosen_model = list(st.session_state.profiles.keys())[0] if st.session_state.profiles else None
+    admin_on = _nr.toggle("Admin mode", key="admin_on")
 
 is_admin = False
 if admin_on:
@@ -232,7 +246,7 @@ if is_admin:
             if st.button("Add model") and pn and pm: st.session_state.profiles[pn] = {"type": "openai" if pt == "openai-compatible" else pt, "model": pm, "base_url": pb, "key": pk}
             active = st.selectbox("Model used for claims", list(st.session_state.profiles))
         st.button("Log out", on_click=_logout)
-else: active = list(st.session_state.profiles)[0]
+else: active = _chosen_model or (list(st.session_state.profiles)[0] if st.session_state.profiles else None)
 cfg = st.session_state.profiles[active]
 
 # ---------- header ----------
