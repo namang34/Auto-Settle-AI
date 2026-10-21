@@ -1,0 +1,6 @@
+HANDOFF_PRIVATE.md
+HANDOFF.md
+.env
+__pycache__/
+*.pyc
+claims_db.json
