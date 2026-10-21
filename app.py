@@ -58,6 +58,12 @@ footer{visibility:hidden}
 .ptable{width:100%;border-collapse:collapse;font-size:.9rem}.ptable th{text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;opacity:.65;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
 .ptable td{padding:9px 8px;border-bottom:1px dotted var(--line);vertical-align:middle}.ptable .n{text-align:right;white-space:nowrap}.ptable tr.tot td{font-weight:800;border-bottom:none}
 .share{display:flex;align-items:center;gap:8px}.share-bar{flex:1;height:8px;border-radius:999px;background:rgba(128,128,128,.2);overflow:hidden;min-width:60px}.share-bar i{display:block;height:100%;background:var(--accent)}
+.story-k{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;opacity:.65;font-weight:600}
+.story-h{font-size:1.4rem;font-weight:800;line-height:1.25;margin:3px 0 8px}.story-sub{font-size:.95rem;opacity:.85;line-height:1.7}
+.story-amt{font-size:2.1rem;font-weight:800;line-height:1.1;margin:2px 0 8px}.story-note{font-size:.8rem;opacity:.7;margin-top:6px}
+.typing{display:flex;gap:5px;padding:8px 2px}.typing i{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.3;animation:blink 1s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.2;transform:translateY(0)}40%{opacity:.85;transform:translateY(-3px)}}
 .sev-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}.legend{font-size:.78rem;opacity:.75;margin:2px 0 6px}
 </style>""", unsafe_allow_html=True)
 
@@ -77,7 +83,7 @@ def to_jpeg(raw, is_video):
         if not ok: raise ValueError("Could not read the video")
         img = Image.fromarray(fr[:, :, ::-1])
     else: img = Image.open(io.BytesIO(raw)).convert("RGB")
-    img.thumbnail((800, 800)); b = io.BytesIO(); img.save(b, "JPEG", quality=80); return img, b.getvalue()
+    img.thumbnail((1280, 1280)); b = io.BytesIO(); img.save(b, "JPEG", quality=85); return img, b.getvalue()
 
 @st.cache_data(show_spinner=False)
 def photo_quality(raw):
@@ -105,9 +111,12 @@ def car_loading(msg):
 
 SEV_COL = {"minor": "#22A55A", "moderate": "#F59E0B", "severe": "#EF4444"}
 
+def cert_level(conf, min_conf):
+    return ("ok", "High certainty") if conf >= max(85, min_conf + 10) else ("warn", "Moderate certainty") if conf >= min_conf else ("bad", "Low certainty: needs review")
+
 def meter(conf, min_conf):
     """Certainty meter: bar = AI confidence, marker = minimum needed for instant settlement."""
-    k, t = ("ok", "High certainty") if conf >= max(85, min_conf + 10) else ("warn", "Moderate certainty") if conf >= min_conf else ("bad", "Low certainty: needs review")
+    k, t = cert_level(conf, min_conf)
     return (f'<div class="meter"><div class="meter-top"><span class="lbl">AI certainty</span><span class="meter-val {k}">{t} · {conf}%</span></div>'
             f'<div class="meter-track"><div class="meter-fill {k}" style="width:{conf}%"></div><div class="meter-mark" style="left:{min_conf}%" title="Minimum for instant settlement"></div></div>'
             f'<div class="meter-foot">Marker: minimum {min_conf:.0f}% needed for instant settlement</div></div>')
@@ -132,13 +141,35 @@ def annotate(im, items, fallback_box=None):
         x, y, bw, bh = fallback_box; d.rectangle([x * w, y * h, min(w - 1, (x + bw) * w), min(h - 1, (y + bh) * h)], outline="#EB6F46", width=lw + 1)
     return im, n
 
+def converse(c, msg, lang):
+    """One customer turn: show their message, a typing indicator, then the rule-based reply. Shared by the chat box and the quick-reply buttons."""
+    st.session_state.chat.append(("user", msg)); log("CUSTOMER", msg)
+    st.chat_message("user").write(msg)
+    with st.chat_message("assistant"):
+        st.markdown('<div class="typing"><i></i><i></i><i></i></div>', unsafe_allow_html=True)
+        rep = core.negotiate(c, msg, rails)
+        if lang == "Hindi": rep = core.translate_hi(rep, cfg)      # a real model call, so no artificial wait
+        else: time.sleep(0.7)                                       # short pause so the reply feels conversational
+    st.session_state.chat.append(("assistant", rep))
+    if c["status"] == "settled": log("DECISION", f"SETTLED at {core.inr(c['amount'])}")
+    elif c["status"] == "escalated": log("DECISION", "ESCALATED: " + c["flags"][-1])
+    else: log("OFFER", f"round {c['round']} offer {core.inr(c['offer'])}")
+    st.rerun()
+
+def quick_replies(c):
+    """(key, label, message sent, primary?) buttons that stay inside the approved range."""
+    o, hi = c["offer"], c["hi"]; mid = round((o + hi) / 2 / 10) * 10; top = int(hi // 10 * 10)
+    q = [("qr_accept", f"Accept {core.inr(o)}", "I accept your offer", True)]
+    if mid > o + 1: q.append(("qr_mid", f"Ask for {core.inr(mid)}", f"Can you do \u20b9{mid}?", False))
+    if top > o + 1 and top != mid: q.append(("qr_top", f"Ask for {core.inr(top)}", f"Can you do \u20b9{top}?", False))
+    q.append(("qr_human", "Talk to a person", "I would like to talk to a person", False))
+    return q
+
 def friendly_error(e):
     """Turn a raw exception into a one-line reason the user can act on."""
     s = str(e).lower()
     if "json" in s or "expecting" in s or "delimiter" in s: return "The AI's reply could not be read (it may have been cut off)."
-    if any(k in s for k in ("api key", "api_key", "authentication", "unauthorized", "401", "403", "permission", "invalid x-api-key")): return "The AI service rejected the request. Check your API key in Streamlit Secrets."
-    if "keyerror" in s or "'key'" in s: return "Missing 'key' in your model Secrets configuration."
-    if "no available providers" in s or "503" in s: return "No provider is currently online for this free model on OpenRouter. Try switching to Gemini or Groq."
+    if any(k in s for k in ("api key", "api_key", "authentication", "unauthorized", "401", "403", "permission", "invalid x-api-key")): return "The AI service rejected the request. Check the API key and model name in the app's Secrets."
     if "429" in s or "quota" in s or "rate limit" in s or "resource_exhausted" in s or "overloaded" in s: return "The AI service is busy or out of quota. Wait a minute and try again."
     if "404" in s or "model" in s and ("not found" in s or "does not exist" in s): return "The AI model name was not found. Check the model name in the app's Secrets."
     if "timed out" in s or "timeout" in s or "connection" in s or "name resolution" in s: return "Could not reach the AI service. Check the connection and try again."
@@ -160,7 +191,7 @@ def part_table(c):
     return ('<table class="ptable"><thead><tr><th>Part</th><th>Damage</th><th>Severity</th><th class="n">Parts</th><th class="n">Labour</th><th class="n">Estimate</th><th>Share</th></tr></thead><tbody>' + rows + '</tbody></table>')
 
 # ---------- secrets and models (backend unchanged) ----------
-PW = st.secrets.get("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", "")
+PW = os.getenv("ADMIN_PASSWORD", "")
 if "profiles" not in st.session_state:
     st.session_state.profiles = {"Default (from secrets)": None}
     try:  # [ai] table, e.g. type / model_name / base_url / api_key
@@ -168,15 +199,10 @@ if "profiles" not in st.session_state:
         st.session_state.profiles["Default (from [ai] secret)"] = {"type": "openai" if _t == "openai-compatible" else _t, "model": _a.get("model_name") or _a.get("model", ""), "base_url": _a.get("base_url", ""), "key": _a.get("api_key") or _a.get("key", "")}
     except Exception: pass
     try:  # [models.<name>] tables
-        for _n, _m in dict(st.secrets.get("models", {})).items():
-            _entry = dict(_m); _t = _entry.get("type", "openai")
-            _entry["type"] = "openai" if _t == "openai-compatible" else _t
-            _entry["key"] = _entry.get("key") or _entry.get("api_key", "")
-            st.session_state.profiles[_n] = _entry
+        for _n, _m in dict(st.secrets.get("models", {})).items(): st.session_state.profiles[_n] = dict(_m)
     except Exception: pass
     if len(st.session_state.profiles) > 1 and not core.env_cfg().get("key") and os.getenv("PROVIDER") != "ollama":
         st.session_state.profiles.pop("Default (from secrets)")
-st.session_state.profiles = {k: v for k, v in st.session_state.profiles.items() if v is not None}
 rails = {"lo": .75, "hi": .90, "step": .04, "max_rounds": 3, "min_conf": 70, "cap": 25000}
 policy = {"active": True, "limit": 50000, "excess": 1000, "age": 3, "claims": 0}
 # ---------- start-up splash: a car drives across once per visit ----------
@@ -197,19 +223,9 @@ def _center_card(title, caption):
     return box
 
 with st.container(border=True):
-    _nl, _nm, _nr = st.columns([4, 2.8, 1.4], vertical_alignment="center")
-    _nl.markdown('<span class="nav-brand">🚗 Auto-Settle AI</span><span class="nav-sub"> &nbsp;·&nbsp; Claims Engine</span>', unsafe_allow_html=True)
-    _avail = [k for k, v in st.session_state.profiles.items() if v is not None]
-    if len(_avail) > 1:
-        if "active_model_choice" not in st.session_state or st.session_state.active_model_choice not in _avail:
-            st.session_state.active_model_choice = _avail[0]
-        _chosen_model = _nm.radio("AI Engine", _avail, horizontal=True, label_visibility="collapsed", key="active_model_choice")
-    elif _avail:
-        _chosen_model = _avail[0]
-        _nm.markdown(f'<span style="font-size:0.85rem;color:#888">⚡ Engine: <b>{_chosen_model}</b></span>', unsafe_allow_html=True)
-    else:
-        _chosen_model = list(st.session_state.profiles.keys())[0] if st.session_state.profiles else None
-    admin_on = _nr.toggle("Admin mode", key="admin_on")
+    _nl, _nr = st.columns([6, 1.5], vertical_alignment="center")
+    _nl.markdown('<span class="nav-brand">\U0001F697 Auto-Settle AI</span><span class="nav-sub"> &nbsp;·&nbsp; Customer portal / Insurer console</span>', unsafe_allow_html=True)
+    admin_on = _nr.toggle("Insurer / Admin mode", key="admin_on")
 
 is_admin = False
 if admin_on:
@@ -249,7 +265,7 @@ if is_admin:
             if st.button("Add model") and pn and pm: st.session_state.profiles[pn] = {"type": "openai" if pt == "openai-compatible" else pt, "model": pm, "base_url": pb, "key": pk}
             active = st.selectbox("Model used for claims", list(st.session_state.profiles))
         st.button("Log out", on_click=_logout)
-else: active = _chosen_model or (list(st.session_state.profiles)[0] if st.session_state.profiles else None)
+else: active = list(st.session_state.profiles)[0]
 cfg = st.session_state.profiles[active]
 
 # ---------- header ----------
@@ -318,6 +334,26 @@ with T["New claim"]:
             st.markdown('<div class="banner bad"><h3>\U0001F6A8 Tier-2 Adjuster Review Required</h3><div>This claim could not be decided safely by the system. No offer has been made.</div><ul>' + "".join(f"<li>{E(str(f))}</li>" for f in c["flags"]) + "</ul></div>", unsafe_allow_html=True)
         else:
             st.markdown('<div class="banner ok"><h3>\u2705 ' + ("Settled via Straight-Through Processing" if c["status"] == "settled" else "Eligible for Instant Straight-Through Settlement") + '</h3><div>Confidence, policy and fraud checks passed. Offers are set by fixed rules, never by the AI.</div></div>', unsafe_allow_html=True)
+        with st.container(border=True):                       # one-glance summary of the whole claim
+            names = list(dict.fromkeys(str(i["part"]).title() for i in c["items"]))
+            head = ", ".join(names[:3]) + (f" +{len(names) - 3} more" if len(names) > 3 else "") + " damaged"
+            ck, ct = cert_level(c["conf"], rails["min_conf"]); ref = st.session_state.get("cid", "")
+            SL, SR = st.columns([1.7, 1], gap="large", vertical_alignment="center")
+            with SL:
+                st.markdown(f'<div class="story-k">Claim summary{" \u00b7 " + E(ref) if ref else ""}</div><div class="story-h">{E(head)}</div>'
+                            f'<div class="story-sub">Repair estimate <b>{core.inr(c["gross"])}</b> \u00b7 Net claim <b>{core.inr(c["net"])}</b> \u00b7 <span class="pill {ck}" style="margin:0">{ct} {c["conf"]}%</span></div>', unsafe_allow_html=True)
+            with SR:
+                rc = st.session_state.get("receipt")
+                if c["status"] == "escalated":
+                    st.markdown(f'<div class="story-k">Status</div><div class="story-amt" style="font-size:1.4rem">\U0001F6A8 Sent to an adjuster</div><div class="story-note">Reference {E(ref) or "pending"}. A human adjuster will contact you. No offer has been made.</div>', unsafe_allow_html=True)
+                elif c["status"] == "settled":
+                    done = f"Paid \u00b7 {E(rc['id'])}" if rc else "Deal confirmed. Enter your UPI ID below to get paid."
+                    st.markdown(f'<div class="story-k">Settlement</div><div class="story-amt" style="color:var(--ok)">{core.inr(c["amount"])}</div><div class="story-note">{done}</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="story-k">Instant cash offer</div><div class="story-amt">{core.inr(c["offer"])}</div>', unsafe_allow_html=True)
+                    if st.button(f"Accept {core.inr(c['offer'])}", type="primary", key="story_accept", use_container_width=True):
+                        c["status"], c["amount"] = "settled", c["offer"]; log("DECISION", f"SETTLED at {core.inr(c['offer'])} (accepted offer)"); st.rerun()
+                    st.markdown('<div class="story-note">Want more? Negotiate in the chat below.</div>', unsafe_allow_html=True)
         A, B = st.columns([1.05, 1], gap="large")
         with A:
             with st.container(border=True):
@@ -347,16 +383,11 @@ with T["New claim"]:
                 lang = st.radio("Chat language", ["English", "Hindi"], horizontal=True)
                 for r, m in st.session_state.chat: st.chat_message(r).write(m)
                 if c["status"] == "negotiating":
-                    if st.button(f"Accept {core.inr(c['offer'])}", type="primary"):
-                        c["status"], c["amount"] = "settled", c["offer"]; log("DECISION", f"SETTLED at {core.inr(c['offer'])} (accepted offer)"); st.rerun()
-                    msg = st.chat_input("Reply or make a counteroffer, e.g. 3500")
-                    if msg:
-                        st.session_state.chat.append(("user", msg)); log("CUSTOMER", msg); rep = core.negotiate(c, msg, rails)
-                        st.session_state.chat.append(("assistant", core.translate_hi(rep, cfg) if lang == "Hindi" else rep))
-                        if c["status"] == "settled": log("DECISION", f"SETTLED at {core.inr(c['amount'])}")
-                        elif c["status"] == "escalated": log("DECISION", "ESCALATED: " + c["flags"][-1])
-                        else: log("OFFER", f"round {c['round']} offer {core.inr(c['offer'])}")
-                        st.rerun()
+                    qr = quick_replies(c); picked = None
+                    for col, (k, label, text, prim) in zip(st.columns(len(qr)), qr):
+                        if col.button(label, key=k, type="primary" if prim else "secondary", use_container_width=True): picked = text
+                    typed = st.chat_input("Or type your own reply or counteroffer, e.g. 3500")
+                    if picked or typed: converse(c, picked or typed, lang)
                 elif c["status"] == "settled":
                     rc = st.session_state.get("receipt")
                     if rc:

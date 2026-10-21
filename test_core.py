@@ -179,3 +179,16 @@ def test_malformed_items_do_not_crash_assess(items):
 
 def test_token_budget_is_generous():
     assert core.MAX_TOKENS >= 2000
+
+
+# ---------- talk to a person ----------
+@pytest.mark.parametrize("msg", ["I would like to talk to a person", "let me speak to someone", "connect me with an adjuster", "get me a human"])
+def test_asking_for_a_human_escalates(msg):
+    c = claim(); core.negotiate(c, msg, RAILS)
+    assert c["status"] == "escalated"
+
+
+@pytest.mark.parametrize("msg", ["Can you do 800?", "I can talk about 900", "my person at the garage said 850"])
+def test_ordinary_offers_are_not_treated_as_a_human_request(msg):
+    c = claim(); core.negotiate(c, msg, RAILS)
+    assert c["status"] != "escalated"
