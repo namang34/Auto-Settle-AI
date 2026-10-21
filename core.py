@@ -32,8 +32,14 @@ def ask_llm(prompt, img_jpeg=None, cfg=None):
         from openai import OpenAI
         content = [{"type": "text", "text": prompt}]
         if b64: content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64}})
-        client = OpenAI(api_key=cfg["key"], base_url=(cfg.get("base_url") or "https://api.openai.com/v1"))
-        call_kwargs = {"model": cfg["model"], "messages": [{"role": "user", "content": content}], "max_tokens": MAX_TOKENS, "timeout": 60}
+        api_key = cfg.get("key") or cfg.get("api_key") or ""
+        base_url = (cfg.get("base_url") or "https://api.openai.com/v1").rstrip("/")
+        headers = {}
+        if "openrouter" in base_url.lower():
+            headers["HTTP-Referer"] = "https://auto-settle-ng434.streamlit.app"
+            headers["X-Title"] = "Auto-Settle AI"
+        client = OpenAI(api_key=api_key, base_url=base_url, default_headers=headers if headers else None, timeout=60.0)
+        call_kwargs = {"model": cfg["model"], "messages": [{"role": "user", "content": content}], "max_tokens": MAX_TOKENS}
         if "gemini" in str(cfg.get("model", "")).lower():
             call_kwargs["reasoning_effort"] = "low"  # drastically reduces Gemini 3.8 thinking latency
         for attempt in range(3):
@@ -83,17 +89,32 @@ def valid_box(b):
 
 def analyse_image(jpeg, cfg=None):
     def pj(t):
+        if not t: raise ValueError("Empty model response")
+        fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", t, re.S)
+        candidates = [fence.group(1)] if fence else []
+        start = t.find("{")
+        if start != -1:
+            depth = 0
+            for idx in range(start, len(t)):
+                if t[idx] == '{': depth += 1
+                elif t[idx] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        candidates.append(t[start:idx+1])
+                        break
         m = re.search(r"\{.*\}", t, re.S)
-        if not m: raise ValueError("No JSON object found in model response")
-        raw = m.group(0)
-        try: return json.loads(raw)                      # valid JSON first: never alter it
-        except Exception: pass
-        raw = re.sub(r",\s*([}\]])", r"\1", raw)          # trailing commas
-        try: return json.loads(raw)
-        except Exception: pass
-        raw = raw.replace("'", '"')                       # last resort: single quotes
-        raw = re.sub(r'(?<=\{|,)\s*(\w+)\s*:', r' "\1":', raw)  # unquoted keys
-        return json.loads(raw)
+        if m: candidates.append(m.group(0))
+        for raw in candidates:
+            try: return json.loads(raw)
+            except Exception: pass
+            raw_clean = re.sub(r",\s*([}\]])", r"\1", raw)
+            try: return json.loads(raw_clean)
+            except Exception: pass
+            raw_clean = raw_clean.replace("'", '"')
+            raw_clean = re.sub(r'(?<=\{|,)\s*(\w+)\s*:', r' "\1":', raw_clean)
+            try: return json.loads(raw_clean)
+            except Exception: pass
+        raise ValueError("No JSON object found in model response: " + str(t[:150]))
     try: r = pj(ask_llm(VISION_PROMPT, jpeg, cfg))
     except ValueError:      # empty, truncated or non-JSON reply (JSONDecodeError is a ValueError): ask once more, strictly
         r = pj(ask_llm(VISION_PROMPT + " IMPORTANT: reply with ONE compact JSON object only. No markdown, no commentary.", jpeg, cfg))
