@@ -239,31 +239,52 @@ def savings_widget(c):
 SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "samples")
 SAMPLE_CASES = {
     "sample_bumper": {
-        "title": "⚡ Sample 1: Bumper Dent (Instant STP Cash Offer)",
-        "title_hi": "⚡ नमूना 1: बम्पर डेंट (त्वरित नकद प्रस्ताव)",
-        "desc": "Small dent on front bumper. Straight-through automated payout (~₹6,300).",
-        "desc_hi": "सामने के बम्पर पर छोटा डेंट। तुरंत स्वचालित भुगतान (~₹6,300)।",
-        "path": os.path.join(SAMPLE_DIR, "sample_bumper.jpg"),
+        "title": "⚡ Demo 1: Bumper Corner Scrape (Instant STP Payout)",
+        "title_hi": "⚡ डेमो 1: बम्पर स्क्रैच (त्वरित नकद भुगतान)",
+        "desc": "Real parking scrape on bumper corner. Automated touchless payout (~₹3,200).",
+        "desc_hi": "पार्किंग पिलर से लगा बम्पर स्क्रैच। तुरंत स्वचालित भुगतान (~₹3,200)।",
+        "path": os.path.join(SAMPLE_DIR, "demo_bumper_scrape.jpg"),
         "claimed": "bumper",
         "finding": {
-            "part": "bumper", "type": "dent", "severity": "minor", "confidence": 92, "quality_ok": True,
-            "items": [{"part": "bumper", "type": "dent", "severity": "minor", "box": [0.35, 0.45, 0.40, 0.35]}],
-            "box": [0.35, 0.45, 0.40, 0.35],
-            "notes": "Verified sample: small impact dent on front bumper panel, clear photo."
+            "part": "bumper", "type": "scratch", "severity": "minor", "confidence": 94, "quality_ok": True,
+            "items": [{"part": "bumper", "type": "scratch", "severity": "minor", "box": [0.20, 0.45, 0.55, 0.45]}],
+            "box": [0.20, 0.45, 0.55, 0.45],
+            "notes": "Verified photo: localized paint scratch and plastic scuff on front bumper corner without structural cracks."
         }
     },
     "sample_door": {
-        "title": "🚨 Sample 2: Door Severe Impact (Adjuster Escalation)",
-        "title_hi": "🚨 नमूना 2: दरवाज़े पर गंभीर क्षति (सर्वेयर समीक्षा)",
-        "desc": "Heavy crumple on rear door. Safety guardrail triggers human inspection.",
-        "desc_hi": "दरवाज़े पर गहरी क्षति। सुरक्षा नियमों द्वारा मानव निरीक्षक को भेजा गया।",
-        "path": os.path.join(SAMPLE_DIR, "sample_door.jpg"),
+        "title": "⚡ Demo 2: Door Panel Deep Crease (Moderate Multi-Part Valuation)",
+        "title_hi": "⚡ डेमो 2: दरवाज़े पर डेंट व खरोंच (विस्तृत मूल्यांकन)",
+        "desc": "Pronounced impact dent on side door with paint touch-up (~₹5,830 instant offer).",
+        "desc_hi": "साइड डोर पर गहरा डेंट एवं रंग खरोंच (~₹5,830 तुरंत प्रस्ताव)।",
+        "path": os.path.join(SAMPLE_DIR, "demo_door_dent.jpg"),
         "claimed": "door",
         "finding": {
-            "part": "door", "type": "dent", "severity": "severe", "confidence": 95, "quality_ok": True,
-            "items": [{"part": "door", "type": "dent", "severity": "severe", "box": [0.25, 0.28, 0.65, 0.55]}],
-            "box": [0.25, 0.28, 0.65, 0.55],
-            "notes": "Verified sample: severe crumpling and deep impact damage across door sheet metal."
+            "part": "door", "type": "dent", "severity": "moderate", "confidence": 92, "quality_ok": True,
+            "items": [
+                {"part": "door", "type": "dent", "severity": "moderate", "box": [0.18, 0.22, 0.65, 0.60]},
+                {"part": "door", "type": "scratch", "severity": "minor", "box": [0.30, 0.40, 0.38, 0.28]}
+            ],
+            "box": [0.18, 0.22, 0.65, 0.60],
+            "notes": "Verified photo: sheet-metal body crease across lower passenger door panel with clear-coat abrasion."
+        }
+    },
+    "sample_crash": {
+        "title": "🚨 Demo 3: Severe Front Collision (Safety Guardrail Escalation)",
+        "title_hi": "🚨 डेमो 3: गंभीर दुर्घटना क्षति (सर्वेयर समीक्षा अनिवार्य)",
+        "desc": "Fractured bumper, shattered headlight, and deformed fender. Triggers adjuster inspection.",
+        "desc_hi": "टूटा बम्पर, फूटी हेडलाइट व मुड़ा फेंडर। सुरक्षा नियमों द्वारा तत्काल सर्वेयर को भेजा गया।",
+        "path": os.path.join(SAMPLE_DIR, "demo_severe_crash.jpg"),
+        "claimed": "bumper",
+        "finding": {
+            "part": "bumper", "type": "broken", "severity": "severe", "confidence": 96, "quality_ok": True,
+            "items": [
+                {"part": "bumper", "type": "broken", "severity": "severe", "box": [0.15, 0.40, 0.70, 0.50]},
+                {"part": "headlight", "type": "broken", "severity": "severe", "box": [0.55, 0.20, 0.35, 0.32]},
+                {"part": "fender", "type": "dent", "severity": "moderate", "box": [0.65, 0.30, 0.30, 0.45]}
+            ],
+            "box": [0.15, 0.40, 0.70, 0.50],
+            "notes": "Verified photo: multi-component impact damage with fractured bumper assembly and shattered polycarbonate headlight lens."
         }
     }
 }
@@ -656,8 +677,8 @@ if is_admin:
                             c_curr = st.session_state.get("claim", {})
                             rim_ann, _ = annotate(rim, c_curr.get("items", []), rbox)
                             st.image(rim_ann, caption=f"Case {x['id']} Localized Bounding Boxes", use_container_width=True)
-                        elif os.path.exists(os.path.join(SAMPLE_DIR, "sample_door.jpg")):
-                            st.image(os.path.join(SAMPLE_DIR, "sample_door.jpg"), caption=f"Case {x['id']} Damage Photo", use_container_width=True)
+                        elif os.path.exists(os.path.join(SAMPLE_DIR, "demo_severe_crash.jpg")):
+                            st.image(os.path.join(SAMPLE_DIR, "demo_severe_crash.jpg"), caption=f"Case {x['id']} Damage Photo", use_container_width=True)
                     with rev_r:
                         st.markdown(f"### Claim {x['id']} &nbsp; <span class='pill warn'>{x.get('state')}</span>", unsafe_allow_html=True)
                         st.markdown(f"**{T_('Escalation Reasons / Safety Flags:', 'समीक्षा के कारण:')}**")
