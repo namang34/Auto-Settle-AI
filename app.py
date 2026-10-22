@@ -162,7 +162,7 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.top-nav-anchor){
 .sbar-val{width:215px;text-align:right;font-size:.82rem;font-weight:700}
 .savings-note{font-size:.78rem;opacity:.75;margin-top:10px;line-height:1.5}
 /* Google Pay / PhonePe-Grade Payout Card */
-.gpay-card{background:linear-gradient(145deg,rgba(34,165,90,0.12) 0%,rgba(15,23,42,0.92) 100%);border:1.5px solid rgba(34,165,90,0.50);border-radius:20px;padding:30px 24px;max-width:520px;margin:16px auto;text-align:center;box-shadow:0 16px 40px rgba(0,0,0,0.4),0 0 24px rgba(34,165,90,0.18);position:relative;overflow:hidden}
+.gpay-card{background:linear-gradient(145deg,rgba(34,165,90,0.12) 0%,rgba(15,23,42,0.95) 100%);border:1.5px solid rgba(34,165,90,0.50);border-radius:20px;padding:30px 24px;max-width:520px;margin:16px auto;text-align:center;box-shadow:0 16px 40px rgba(0,0,0,0.4),0 0 24px rgba(34,165,90,0.18);position:relative;overflow:hidden;color:#ffffff}
 .gpay-card::before{content:"";position:absolute;top:-60px;left:50%;transform:translateX(-50%);width:180px;height:180px;background:radial-gradient(circle,rgba(34,165,90,0.4) 0%,transparent 70%);pointer-events:none}
 .gpay-check-wrap{width:70px;height:70px;margin:0 auto 14px;display:flex;align-items:center;justify-content:center}
 .gpay-check-svg{width:70px;height:70px;border-radius:50%;display:block;stroke-width:3.5;stroke:#22A55A;stroke-miterlimit:10;box-shadow:0 0 22px rgba(34,165,90,0.45);animation:gpayScale 0.4s ease-in-out}
@@ -172,14 +172,14 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(.top-nav-anchor){
 @keyframes gpayScale{0%,100%{transform:none}50%{transform:scale3d(1.1,1.1,1)}}
 .gpay-status-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:999px;background:rgba(34,165,90,0.18);border:1px solid rgba(34,165,90,0.45);color:#22A55A;font-size:0.72rem;font-weight:800;letter-spacing:0.07em;text-transform:uppercase;margin-bottom:8px}
 .gpay-amount{font-size:2.8rem;font-weight:800;color:#ffffff;line-height:1.1;margin:4px 0 6px;letter-spacing:-0.02em}
-.gpay-sub{font-size:0.92rem;opacity:0.85;margin-bottom:16px}
+.gpay-sub{font-size:0.92rem;color:#cbd5e1;margin-bottom:16px}
 .gpay-sub b{color:#22A55A;font-family:ui-monospace,monospace}
-.gpay-divider{height:1px;background:repeating-linear-gradient(90deg,rgba(128,128,128,0.3) 0 8px,transparent 8px 14px);margin:18px 0}
-.gpay-details-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;background:rgba(0,0,0,0.25);border-radius:14px;padding:16px;border:1px solid rgba(255,255,255,0.08)}
+.gpay-divider{height:1px;background:repeating-linear-gradient(90deg,rgba(255,255,255,0.2) 0 8px,transparent 8px 14px);margin:18px 0}
+.gpay-details-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;background:rgba(0,0,0,0.35);border-radius:14px;padding:16px;border:1px solid rgba(255,255,255,0.12)}
 .gpay-col{display:flex;flex-direction:column;gap:3px}
-.gpay-label{font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;opacity:0.6;font-weight:600}
-.gpay-val{font-size:0.86rem;font-weight:700;font-family:ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gpay-badge-footer{margin-top:16px;font-size:0.72rem;opacity:0.65;letter-spacing:0.03em}
+.gpay-label{font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;font-weight:600}
+.gpay-val{font-size:0.86rem;font-weight:700;font-family:ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ffffff}
+.gpay-badge-footer{margin-top:16px;font-size:0.72rem;color:#94a3b8;letter-spacing:0.03em}
 .upi-success{background:rgba(34,165,90,.1);border:1.5px solid var(--ok);border-radius:12px;padding:16px;margin:12px 0;text-align:center}
 .upi-success h3{color:var(--ok);margin:4px 0 6px;font-size:1.3rem}
 </style>""", unsafe_allow_html=True)
@@ -190,19 +190,33 @@ def T_(en, hi):
 
 DB = "claims_db.json"  # claim queue, audit trail, photo fingerprints
 def db_load():
-    try: return json.load(open(DB))
+    try: return json.load(open(DB, encoding="utf-8"))
     except Exception: return {"queue": [], "log": [], "hashes": []}
-def db_save(d): json.dump(d, open(DB, "w"), indent=1)
+def db_save(d):
+    try:
+        tmp = DB + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=1)
+        os.replace(tmp, DB)
+    except Exception:
+        try: json.dump(d, open(DB, "w", encoding="utf-8"), indent=1)
+        except Exception: pass
 def log(ev, detail):
     d = db_load(); d["log"].append({"t": time.strftime("%H:%M:%S"), "ev": ev, "detail": detail}); db_save(d)
 def to_jpeg(raw, is_video):
     if is_video:
         import cv2
-        p = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4"); p.write(raw); p.close()
-        cap = cv2.VideoCapture(p.name); cap.set(cv2.CAP_PROP_POS_FRAMES, cap.get(cv2.CAP_PROP_FRAME_COUNT) // 2)
-        ok, fr = cap.read(); cap.release()
-        if not ok: raise ValueError("Could not read the video")
-        img = Image.fromarray(fr[:, :, ::-1])
+        p = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        try:
+            p.write(raw); p.close()
+            cap = cv2.VideoCapture(p.name); cap.set(cv2.CAP_PROP_POS_FRAMES, cap.get(cv2.CAP_PROP_FRAME_COUNT) // 2)
+            ok, fr = cap.read(); cap.release()
+            if not ok: raise ValueError("Could not read the video")
+            img = Image.fromarray(fr[:, :, ::-1])
+        finally:
+            if os.path.exists(p.name):
+                try: os.unlink(p.name)
+                except Exception: pass
     else: img = Image.open(io.BytesIO(raw)).convert("RGB")
     img.thumbnail((800, 800)); b = io.BytesIO(); img.save(b, "JPEG", quality=80); return img, b.getvalue()
 
@@ -365,26 +379,27 @@ def part_table(c):
     return ('<table class="ptable"><thead><tr><th>Part</th><th>Damage</th><th>Severity</th><th class="n">Parts</th><th class="n">Labour</th><th class="n">Estimate</th><th>Share</th></tr></thead><tbody>' + rows + '</tbody></table>')
 
 def savings_widget(c):
-    gross = c["gross"]
+    dep_amt = c["parts"] / (1 - c["dep"]) * c["dep"] if c["dep"] < 1 else 0
+    gross_garage = c["gross"] + dep_amt  # full workshop repair bill before depreciation
     offer = c["offer"]
-    saved = max(0, gross - offer)
-    pct = round((saved / (gross or 1)) * 100)
-    inst_pct = min(100, round((offer / (gross or 1)) * 100))
+    saved = max(0, gross_garage - offer)
+    pct = round((saved / (gross_garage or 1)) * 100)
+    inst_pct = min(100, round((offer / (gross_garage or 1)) * 100))
     t_title = T_("Customer & Insurer Savings Analysis", "वित्तीय एवं समय बचत विश्लेषण")
     t_save = T_("Save", "बचत")
-    t_days = T_("12 Days", "12 दिन")
+    t_days = T_("10–14 Days", "10–14 दिन")
     t_gar_lbl = T_("Traditional Garage Repair:", "पारंपरिक गैराज मरम्मत:")
     t_gar_val = T_("10–14 days in workshop", "10–14 दिन प्रतीक्षा")
     t_inst_lbl = T_("Auto-Settle Instant Cash:", "त्वरित नकद निपटान:")
     t_inst_val = T_("Instant UPI (<60s)", "तुरंत UPI (<60s)")
-    t_note_lbl = T_("Why this benefits both sides:", "दोनों पक्षों के लिए लाभकारी:")
-    t_note_txt = T_("Policyholder avoids weeks of garage downtime and paperwork; insurer eliminates physical surveyor travel costs and repair shop markups.", "बीमाधारक को गैराज में बिना रुके तुरंत नकद मिलता है; बीमा कंपनी का निरीक्षण व गैराज का भारी खर्च बचता है।")
+    t_note_lbl = T_("How savings are calculated:", "बचत की गणना:")
+    t_note_txt = T_("Traditional garage repair benchmark includes undepreciated parts + workshop labour. Auto-Settle provides 75%–90% instant cash, saving the insurer physical surveyor travel (~₹3,500) and garage markups while eliminating 10–14 days customer delay.", "पारंपरिक गैराज मरम्मत में बिना घिसाई के नए पुर्जे व मरम्मत खर्च शामिल हैं। ऑटो-सेटल 75%-90% नकद भुगतान करता है, जिससे बीमा कंपनी का सर्वेयर व गैराज कमीशन बचता है।")
     return (f'<div class="savings-card">'
             f'<div class="savings-header"><span class="savings-title">💰 {t_title}</span>'
             f'<span class="savings-badge">{t_save} {core.inr(saved)} ({pct}%) &amp; {t_days}</span></div>'
             f'<div class="sbar-row"><span class="sbar-lbl">{t_gar_lbl}</span>'
             f'<div class="sbar-track"><div class="sbar-fill garage" style="width:100%"></div></div>'
-            f'<span class="sbar-val">{core.inr(gross)} &nbsp;·&nbsp; {t_gar_val}</span></div>'
+            f'<span class="sbar-val">{core.inr(gross_garage)} &nbsp;·&nbsp; {t_gar_val}</span></div>'
             f'<div class="sbar-row"><span class="sbar-lbl">{t_inst_lbl}</span>'
             f'<div class="sbar-track"><div class="sbar-fill instant" style="width:{inst_pct}%"></div></div>'
             f'<span class="sbar-val" style="color:var(--ok)">{core.inr(offer)} &nbsp;·&nbsp; {t_inst_val}</span></div>'
@@ -395,8 +410,8 @@ SAMPLE_CASES = {
     "sample_bumper": {
         "title": "⚡ Demo 1: Bumper Corner Scrape (Instant STP Payout)",
         "title_hi": "⚡ डेमो 1: बम्पर स्क्रैच (त्वरित नकद भुगतान)",
-        "desc": "Real parking scrape on bumper corner. Automated touchless payout (~₹3,200).",
-        "desc_hi": "पार्किंग पिलर से लगा बम्पर स्क्रैच। तुरंत स्वचालित भुगतान (~₹3,200)।",
+        "desc": "Real parking scrape on bumper corner. Automated touchless payout (~₹471 instant offer).",
+        "desc_hi": "पार्किंग पिलर से लगा बम्पर स्क्रैच। तुरंत स्वचालित भुगतान (~₹471 तुरंत प्रस्ताव)।",
         "path": os.path.join(SAMPLE_DIR, "demo_bumper_scrape.jpg"),
         "claimed": "bumper",
         "finding": {
@@ -409,8 +424,8 @@ SAMPLE_CASES = {
     "sample_door": {
         "title": "⚡ Demo 2: Door Panel Deep Crease (Moderate Multi-Part Valuation)",
         "title_hi": "⚡ डेमो 2: दरवाज़े पर डेंट व खरोंच (विस्तृत मूल्यांकन)",
-        "desc": "Pronounced impact dent on side door with paint touch-up (~₹5,830 instant offer).",
-        "desc_hi": "साइड डोर पर गहरा डेंट एवं रंग खरोंच (~₹5,830 तुरंत प्रस्ताव)।",
+        "desc": "Pronounced impact dent on side door. Instant offer ~₹4,859 (up to ₹5,830 approval ceiling).",
+        "desc_hi": "साइड डोर पर गहरा डेंट एवं रंग खरोंच। तुरंत प्रस्ताव ~₹4,859 (अधिकतम ₹5,830 सीमा)।",
         "path": os.path.join(SAMPLE_DIR, "demo_door_dent.jpg"),
         "claimed": "door",
         "finding": {
@@ -444,7 +459,11 @@ SAMPLE_CASES = {
 }
 
 # ---------- secrets and models (backend unchanged) ----------
-PW = st.secrets.get("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", "")
+PW = ""
+try:
+    PW = st.secrets.get("ADMIN_PASSWORD", "") or os.getenv("ADMIN_PASSWORD", "")
+except Exception:
+    PW = os.getenv("ADMIN_PASSWORD", "")
 if "profiles" not in st.session_state:
     st.session_state.profiles = {"Default (from secrets)": None}
     try:  # [ai] table, e.g. type / model_name / base_url / api_key
@@ -549,11 +568,18 @@ T = dict(zip(names, st.tabs(tabs_display)))
 
 def start_claim(finding, claimed, extra=()):
     c = core.assess(finding, claimed, policy, rails, extra); st.session_state.claim = c; st.session_state.chat = []; st.session_state.paid = False; st.session_state.receipt = None
+    st.session_state.balloons_shown = False
     log("ESTIMATE", f"net={core.inr(c['net'])} range={core.inr(c['lo'])}-{core.inr(c['hi'])} risk={c['risk']}")
     if c["status"] == "escalated": log("DECISION", "ESCALATED: " + "; ".join(c["flags"]))
     else: st.session_state.chat.append(("assistant", core.opening(c))); log("OFFER", f"opening {core.inr(c['offer'])}")
-    d = db_load(); d["queue"].append({"id": f"C{len(d['queue'])+1}", "state": "Needs review" if c["status"] == "escalated" else "Open",
-        "detail": ("ESCALATED: " + "; ".join(c["flags"])) if c["status"] == "escalated" else "Negotiating", "net": c["net"], "paid": 0}); db_save(d); st.session_state.cid = d["queue"][-1]["id"]
+    d = db_load()
+    cid = f"C{len(d['queue'])+1}"
+    sk = st.session_state.get("active_sample_key")
+    d["queue"].append({"id": cid, "state": "Needs review" if c["status"] == "escalated" else "Open",
+        "detail": ("ESCALATED: " + "; ".join(c["flags"])) if c["status"] == "escalated" else "Negotiating",
+        "net": c["net"], "gross": c["gross"], "paid": 0, "claimed": claimed, "sample_key": sk})
+    db_save(d)
+    st.session_state.cid = cid
 
 with T["New claim"]:
     L, R = st.columns([1, 1.1], gap="large")
@@ -581,18 +607,21 @@ with T["New claim"]:
                         _title_hi_clean = sc['title_hi'].split(':', 1)[1].strip() if ':' in sc['title_hi'] else sc['title_hi']
                         st.markdown(f"<div style='font-size:0.80rem;font-weight:700;margin:3px 0 1px;line-height:1.2'>{T_(_title_clean, _title_hi_clean)}</div>", unsafe_allow_html=True)
                         st.caption(T_(sc["desc"], sc["desc_hi"]))
-                        if st.button(T_("Run Flow", "दावा चलाएं"), key="btn_" + sk, type="secondary", use_container_width=True):
+                        if st.button(T_("Run Demo", "डेमो चलाएं"), key="btn_" + sk, type="secondary", use_container_width=True):
                             im = Image.open(sc["path"]).convert("RGB")
                             im.thumbnail((800, 800))
                             st.session_state.img = (im, sc["finding"].get("box"))
                             st.session_state.sample_active = sc["path"]
+                            st.session_state.active_sample_key = sk
                             start_claim(sc["finding"], sc["claimed"])
                             st.rerun()
             with st.expander(T_("AI unavailable? Enter findings manually", "एआई अनुपलब्ध? मैन्युअल रूप से विवरण दर्ज करें")):
                 mp = st.multiselect(T_("Damaged parts", "क्षतिग्रस्त भाग"), list(core.PARTS), ["bumper"]); mt = st.selectbox(T_("Damage type", "क्षति का प्रकार"), list(core.TYP)); ms = st.selectbox(T_("Severity", "तीव्रता"), list(core.SEV))
                 mc = st.slider(T_("Confidence %", "सटीकता %"), 0, 100, 85); mq = st.checkbox(T_("Photo is clear", "फोटो स्पष्ट है"), True)
                 if st.button(T_("Use manual findings", "मैन्युअल विवरण उपयोग करें")) and mp:
+                    st.session_state.active_sample_key = None
                     start_claim({"part": mp[0], "type": mt, "severity": ms, "confidence": mc, "quality_ok": mq, "items": [{"part": p, "type": mt, "severity": ms} for p in mp], "notes": "Manually entered findings"}, claimed); st.session_state.pop("img", None)
+                    st.rerun()
     with R:
         with st.container(border=True):
             st.markdown(f"#### {T_('Your photo', 'आपकी फोटो')}")
@@ -609,11 +638,22 @@ with T["New claim"]:
     if go and up:
         try:
             with car_loading("Analysing your photo. This usually takes 10 to 20 seconds..."):
-                img, jpeg = to_jpeg(up.getvalue(), up.type.startswith("video")); h = hashlib.sha256(jpeg).hexdigest(); d = db_load(); extra = []
-                if h in d["hashes"]: extra.append("Duplicate photo: this image was already submitted")
-                else: d["hashes"].append(h); db_save(d)
-                finding = core.analyse_image(jpeg, cfg); log("AI_VISION", json.dumps(finding))
-            st.session_state.img = (img, finding.get("box")); start_claim(finding, claimed, extra)
+                img, jpeg = to_jpeg(up.getvalue(), up.type.startswith("video"))
+                h = hashlib.sha256(jpeg).hexdigest()
+                d = db_load()
+                extra = []
+                if h in d["hashes"]:
+                    extra.append("Duplicate photo: this image was already submitted")
+                finding = core.analyse_image(jpeg, cfg)
+                log("AI_VISION", json.dumps(finding))
+            st.session_state.img = (img, finding.get("box"))
+            st.session_state.sample_active = None
+            st.session_state.active_sample_key = None
+            start_claim(finding, claimed, extra)
+            if h not in d["hashes"]:
+                d["hashes"].append(h)
+                db_save(d)
+            st.rerun()
         except Exception as e:
             st.error(friendly_error(e) + " You can also try another photo, or use the manual option."); log("AI_ERROR", str(e))
             with st.expander("Technical details"): st.code(str(e))
@@ -627,8 +667,8 @@ with T["New claim"]:
         else:
             st.markdown('<div class="banner ok"><h3>\u2705 ' + ("Settled via Straight-Through Processing" if c["status"] == "settled" else "Eligible for Instant Straight-Through Settlement") + '</h3><div>Confidence, policy and fraud checks passed. Offers are set by fixed rules, never by the AI.</div></div>', unsafe_allow_html=True)
         with st.container(border=True):                       # one-glance summary of the whole claim
-            names = list(dict.fromkeys(str(i["part"]).title() for i in c["items"]))
-            head = ", ".join(names[:3]) + (f" +{len(names) - 3} more" if len(names) > 3 else "") + " damaged"
+            damaged_parts = list(dict.fromkeys(str(i["part"]).title() for i in c["items"]))
+            head = ", ".join(damaged_parts[:3]) + (f" +{len(damaged_parts) - 3} more" if len(damaged_parts) > 3 else "") + " damaged"
             ck, ct = cert_level(c["conf"], rails["min_conf"]); ref = st.session_state.get("cid", "")
             SL, SR = st.columns([1.7, 1], gap="large", vertical_alignment="center")
             with SL:
@@ -682,6 +722,9 @@ with T["New claim"]:
             elif c["status"] == "settled":
                 rc = st.session_state.get("receipt")
                 if rc:
+                    if not st.session_state.get("balloons_shown"):
+                        st.balloons()
+                        st.session_state.balloons_shown = True
                     st.markdown(f"""
 <div class="gpay-card">
   <div class="gpay-check-wrap">
@@ -716,7 +759,7 @@ with T["New claim"]:
   </div>
   
   <div class="gpay-badge-footer">
-    <span>🛡️ {T_("IRDAI Minor Motor Claims Compliant", "आईआरडीएआई मोटर दावा दिशानिर्देश अनुरूप")}</span> &nbsp;·&nbsp; <span>{T_("Zero Workshop Downtime", "शून्य गैराज प्रतीक्षा")}</span>
+    <span>🛡️ {T_("Designed around IRDAI Minor Motor Claims Workflow", "आईआरडीएआई मोटर दावा कार्यप्रवाह अनुरूप")}</span> &nbsp;·&nbsp; <span>{T_("Zero Workshop Downtime", "शून्य गैराज प्रतीक्षा")}</span>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -738,8 +781,8 @@ Insurer Savings       : {core.inr(rc['saved'])}
 ----------------------------------------------------
 FINAL CASH SETTLEMENT : {core.inr(rc['amt'])}
 ====================================================
-This is an electronically generated insurance settlement 
-voucher compliant with IRDAI minor motor claim guidelines.
+This is an electronically generated settlement voucher 
+prototype designed around IRDAI minor motor claim workflows.
 ===================================================="""
                     _c_dl, _c_rst = st.columns([1.4, 1])
                     with _c_dl:
@@ -767,7 +810,7 @@ voucher compliant with IRDAI minor motor claim guidelines.
                             if q: q.update(state="Auto-settled", detail="SETTLED", paid=c["amount"], saved=c["gross"] - c["amount"]); db_save(d)
                             log("PAYOUT", f"Simulated UPI transfer of {core.inr(c['amount'])} to **{upi[2:]}"); st.session_state.paid = True
                             st.session_state.receipt = {"id": "TXN" + hashlib.sha1(f"{st.session_state.cid}{time.time()}".encode()).hexdigest()[:10].upper(), "ts": time.strftime("%d %b %Y, %H:%M:%S"), "to": "**" + upi[2:], "amt": c["amount"], "garage": c["gross"], "saved": c["gross"] - c["amount"]}
-                            st.balloons(); st.rerun()
+                            st.rerun()
                         else: st.error("Please enter a valid UPI ID (e.g. name@bank).")
             elif c["status"] == "negotiating":
                 col_left, col_right = st.columns(2, gap="medium")
@@ -789,7 +832,7 @@ voucher compliant with IRDAI minor motor claim guidelines.
                                 log("PAYOUT", f"Simulated UPI transfer of {core.inr(c['amount'])} to **{upi_in.strip()[2:]}")
                                 st.session_state.paid = True
                                 st.session_state.receipt = {"id": "TXN" + hashlib.sha1(f"{st.session_state.cid}{time.time()}".encode()).hexdigest()[:10].upper(), "ts": time.strftime("%d %b %Y, %H:%M:%S"), "to": "**" + upi_in.strip()[2:], "amt": c["amount"], "garage": c["gross"], "saved": c["gross"] - c["amount"]}
-                                st.balloons(); st.rerun()
+                                st.rerun()
                             else:
                                 st.error(T_("Please enter a valid UPI ID (e.g. name@bank) to receive your payment.", "कृपया भुगतान प्राप्त करने के लिए वैध UPI ID दर्ज करें।"))
                 with col_right:
@@ -812,8 +855,15 @@ voucher compliant with IRDAI minor motor claim guidelines.
                     st.caption(T_("Interactive settlement negotiation bounded by strict insurer financial limits (75%–90%).", "बीमा कंपनी के निश्चित वित्तीय नियमों (75%–90%) के तहत स्वचालित बातचीत।"))
                     for sender, msg in st.session_state.chat:
                         with st.chat_message(sender): st.write(msg)
+                    q_replies = quick_replies(c)
+                    if q_replies:
+                        st.caption(T_("Quick Response / Counteroffer Options:", "त्वरित प्रति-प्रस्ताव विकल्प:"))
+                        qr_cols = st.columns(len(q_replies))
+                        for q_idx, (q_key, q_lbl, q_msg, q_pri) in enumerate(q_replies):
+                            if qr_cols[q_idx].button(q_lbl, key=f"btn_qr_{q_key}", type="primary" if q_pri else "secondary", use_container_width=True):
+                                converse(c, q_msg, "Hindi" if st.session_state.get("app_lang") == "हिंदी" else "English")
                     with st.form("chat_counter_form", clear_on_submit=True):
-                        user_chat = st.text_input(T_("Your message or counteroffer amount", "आपका संदेश या प्रति-प्रस्ताव राशि"), placeholder="e.g. Can you do ₹5,200?")
+                        user_chat = st.text_input(T_("Or type a custom message or counteroffer", "या अपना संदेश या प्रति-प्रस्ताव लिखें"), placeholder="e.g. Can you do ₹5,200?")
                         if st.form_submit_button(T_("Send Counteroffer", "प्रति-प्रस्ताव भेजें"), type="secondary") and user_chat.strip():
                             converse(c, user_chat.strip(), "Hindi" if st.session_state.get("app_lang") == "हिंदी" else "English")
 
@@ -828,7 +878,7 @@ with T["Assumptions"]:
 - Costs come from a mock parts and labour table with illustrative rupee values and a labour rate of \u20b9500 per hour.
 - Parts lose 5% of value per year of vehicle age, up to 50%; the policy excess is deducted from the claim.
 - The cash settlement band is 75% to 90% of the net claim value, editable by the insurer.
-- Escalation triggers: unusable photo, low AI confidence, severe damage, over-cap or over-limit claims, wrong part claimed, duplicate or old photo, lapsed policy, repeat claims, rule-changing or angry chat messages.
+- Escalation triggers: unusable photo, low AI confidence, severe damage, over-cap or over-limit claims, wrong part claimed, duplicate photo submission (SHA-256 fingerprinting), lapsed policy, repeat claims, rule-changing or angry chat messages.
 - Payments are simulated. Photo quality is a measured sharpness and exposure check, not a fraud test.
 - Accuracy of the damage detection has not been measured on a labelled set.""")
 
@@ -843,6 +893,7 @@ if is_admin:
         k[1].metric(T_("Straight-Through Rate", "त्वरित निपटान दर (STP)"), f"{stp/n*100:.0f}%" if n else "-")
         k[2].metric(T_("Avg Settlement Time", "औसत निपटान समय"), "42s", delta="vs 12d industry avg", delta_color="inverse")
         k[3].metric(T_("Insurer Money Saved", "कुल बचत राशि"), core.inr(sum(x.get("saved", 0) for x in q)))
+        st.caption(T_("Industry benchmark: 10–14 day workshop turnaround vs 42s instant STP cash settlement. KPI metrics are simulated illustrative baselines.", "उद्योग मानक: 10-14 दिन की तुलना में 42 सेकंड में त्वरित निपटान।"))
         
         # 2. Outcome Chart
         c_auto = sum(1 for x in q if x.get("state") == "Auto-settled")
@@ -884,8 +935,12 @@ if is_admin:
                             c_curr = st.session_state.get("claim", {})
                             rim_ann, _ = annotate(rim, c_curr.get("items", []), rbox)
                             st.image(rim_ann, caption=f"Case {x['id']} Localized Bounding Boxes", use_container_width=True)
-                        elif os.path.exists(os.path.join(SAMPLE_DIR, "demo_severe_crash.jpg")):
-                            st.image(os.path.join(SAMPLE_DIR, "demo_severe_crash.jpg"), caption=f"Case {x['id']} Damage Photo", use_container_width=True)
+                        elif x.get("sample_key") and x["sample_key"] in SAMPLE_CASES and os.path.exists(SAMPLE_CASES[x["sample_key"]]["path"]):
+                            st.image(SAMPLE_CASES[x["sample_key"]]["path"], caption=f"Case {x['id']} Inspection Photo ({SAMPLE_CASES[x['sample_key']]['title'].split(':')[0]})", use_container_width=True)
+                        elif os.path.exists(os.path.join(SAMPLE_DIR, "demo_severe_crash.jpg")) and ("severe" in str(x.get("detail", "")).lower() or "collision" in str(x.get("detail", "")).lower()):
+                            st.image(os.path.join(SAMPLE_DIR, "demo_severe_crash.jpg"), caption=f"Case {x['id']} Severe Collision Photo", use_container_width=True)
+                        else:
+                            st.info("Photo archived in secure claim vault.")
                     with rev_r:
                         st.markdown(f"### Claim {x['id']} &nbsp; <span class='pill warn'>{x.get('state')}</span>", unsafe_allow_html=True)
                         st.markdown(f"**{T_('Escalation Reasons / Safety Flags:', 'समीक्षा के कारण:')}**")

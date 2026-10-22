@@ -7,6 +7,13 @@ PARTS = {"bumper": (6500, 3), "door": (9000, 4), "mirror": (3500, 1), "headlight
          "grille": (3000, 1), "wheel": (6000, 1.5), "taillight": (4000, 1), "boot": (9500, 3.5)}  # (parts cost INR, labour hours) - mock reference data
 SEV = {"minor": .25, "moderate": .6, "severe": 1.0}
 TYP = {"scratch": .5, "dent": .8, "crack": 1.0, "broken": 1.2}
+SYNONYMS = {
+    "hood": "bonnet", "trunk": "boot", "windscreen": "windshield",
+    "front windshield": "windshield", "rear windshield": "windshield",
+    "tyre": "wheel", "tire": "wheel", "rim": "wheel", "alloy": "wheel",
+    "headlamp": "headlight", "taillamp": "taillight", "tail light": "taillight",
+    "rear bumper": "bumper", "front bumper": "bumper", "quarter panel": "fender"
+}
 MAX_TOKENS = 2500   # generous: thinking models spend part of this budget before answering
 RATE = 500  # INR per labour hour (assumption)
 
@@ -41,7 +48,7 @@ def ask_llm(prompt, img_jpeg=None, cfg=None):
         client = OpenAI(api_key=api_key, base_url=base_url, default_headers=headers if headers else None, timeout=60.0)
         call_kwargs = {"model": cfg["model"], "messages": [{"role": "user", "content": content}], "max_tokens": MAX_TOKENS}
         if "gemini" in str(cfg.get("model", "")).lower():
-            call_kwargs["reasoning_effort"] = "low"  # drastically reduces Gemini 3.8 thinking latency
+            call_kwargs["reasoning_effort"] = "low"  # drastically reduces thinking latency
         for attempt in range(3):
             try:
                 r = client.chat.completions.create(**call_kwargs)
@@ -148,9 +155,24 @@ def _num(v, default=0.0):
 
 def assess(f, claimed, policy, rails, extra_flags=()):
     raw_items = _items(f)
-    unknown = sorted({str(i.get("part")) for i in raw_items if i.get("part") not in PARTS})   # parts we cannot price
-    items = [{"part": i.get("part") if i.get("part") in PARTS else "bumper", "type": i.get("type"), "severity": i.get("severity"),
-              "box": [float(v) for v in i["box"]] if valid_box(i.get("box")) else None} for i in raw_items]
+    norm_items = []
+    for i in raw_items:
+        p = str(i.get("part", "")).strip().lower()
+        p = SYNONYMS.get(p, p)
+        t = str(i.get("type", "dent")).strip().lower()
+        s = str(i.get("severity", "moderate")).strip().lower()
+        if t in ("scratch", "scuff", "scrape", "abrasion"): t = "scratch"
+        elif t in ("dent", "crease", "ding", "depression"): t = "dent"
+        elif t in ("crack", "fracture", "split", "tear"): t = "crack"
+        elif t in ("broken", "shattered", "smashed", "missing"): t = "broken"
+        if s in ("minor", "low", "slight", "light"): s = "minor"
+        elif s in ("moderate", "medium", "mid"): s = "moderate"
+        elif s in ("severe", "high", "heavy", "critical", "major"): s = "severe"
+        box = [float(v) for v in i["box"]] if valid_box(i.get("box")) else None
+        norm_items.append({"part": p, "type": t, "severity": s, "box": box})
+    unknown = sorted({i["part"] for i in norm_items if i["part"] not in PARTS})   # parts we cannot price
+    items = [{"part": i["part"] if i["part"] in PARTS else "bumper", "type": i["type"], "severity": i["severity"],
+              "box": i["box"]} for i in norm_items]
     dep = min(.5, max(0, _num(policy["age"])) * .05)     # illustrative: 5% per year, max 50%
     raw = lab = 0.0
     for i in items:
@@ -167,7 +189,9 @@ def assess(f, claimed, policy, rails, extra_flags=()):
     if conf < rails["min_conf"]: flags.append(f"AI confidence {conf}% is below the {rails['min_conf']}% threshold")
     if any(i["severity"] == "severe" for i in items): flags.append("Severe damage needs a human inspection")
     if net > rails["cap"]: flags.append(f"Net claim {inr(net)} exceeds the auto-settle cap {inr(rails['cap'])}")
-    if claimed and not str(claimed).lower().startswith(("auto", "unsure", "not sure", "🤖")) and claimed not in [i["part"] for i in items]:
+    claimed_clean = str(claimed or "").strip().lower()
+    claimed_part = SYNONYMS.get(claimed_clean, claimed_clean)
+    if claimed_clean and not claimed_clean.startswith(("auto", "unsure", "not sure", "🤖")) and claimed_part not in [i["part"] for i in items]:
         flags.append(f"Customer claimed '{claimed}' but the photo shows {', '.join(i['part'] for i in items)} (possible mismatch)")
     if f.get("added", 0) >= 2: flags.append(f"AI found {f['added']} more damaged parts on a second look, so its first answer was unstable")
     if not policy["active"]: flags.append("Policy is not active, so a human must confirm cover")

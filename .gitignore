@@ -1,6 +1,24 @@
+# Private documents & notes
 HANDOFF_PRIVATE.md
 HANDOFF.md
-.env
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python cache & compiled files
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Streamlit secrets & local environment variables
+.env
+.streamlit/secrets.toml
+secrets.toml
+
+# Local databases & temp files
 claims_db.json
+claims_db.json.tmp
+*.tmp

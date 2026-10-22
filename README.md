@@ -3,7 +3,7 @@
 > *End-to-end autonomous First Notice of Loss (FNOL) appraisal, deterministic rule-based pricing, and instant UPI settlement for minor motor insurance claims.*
 
 [![Live App](https://img.shields.io/badge/Live_App-Streamlit_Cloud-FF4B4B?style=for-the-badge&logo=streamlit)](https://auto-settle-ng434.streamlit.app/)
-[![License](https://img.shields.io/badge/IRDAI-Sandbox_Compliant-22A55A?style=for-the-badge)](https://auto-settle-ng434.streamlit.app/)
+[![Workflow](https://img.shields.io/badge/IRDAI_Workflow-Aligned-22A55A?style=for-the-badge)](https://auto-settle-ng434.streamlit.app/)
 [![Models](https://img.shields.io/badge/AI_Engines-Gemini_|_Groq_|_OpenRouter-EB6F46?style=for-the-badge)](https://auto-settle-ng434.streamlit.app/)
 
 ---
@@ -38,13 +38,13 @@ Automatic escalation to human surveyors triggers instantly upon:
 - Duplicate photo detection using cryptographic SHA-256 image fingerprinting.
 - Lapsed policy or excessive claim frequency ($>3$ claims in 12 months).
 
-### 4. 💳 Fintech-Grade UPI Settlement & IRDAI Receipts
+### 4. 💳 Fintech-Grade UPI Settlement & Settlement Receipt
 - **Google Pay / PhonePe-Style Animated Payout Card:** Real-time hardware-accelerated SVG checkmark and emerald ambient glow.
 - **One-Click Pre-Filled Demo VPA:** Fast, foolproof live judging demo (`rahul.demo@okhdfcbank`).
-- **Official Voucher:** Generates an IRDAI-compliant digital claims settlement voucher with unique IMPS transaction IDs.
+- **Official Voucher:** Generates a digital claims settlement voucher designed around IRDAI minor motor claim workflows with unique IMPS transaction IDs.
 
 ### 5. 📊 Before vs. After Savings Analytics
-- Interactive comparative visualization contrasting the **traditional 14-day workshop route (₹8,295)** against the **instant Auto-Settle cash route (₹4,859)**, demonstrating direct savings of **₹3,436 (41%)** for the insurer and zero downtime for the car owner.
+- Interactive comparative visualization contrasting the **traditional 10–14 day workshop route (₹8,295)** against the **instant Auto-Settle cash route (₹4,859)**, demonstrating direct savings of **₹3,436 (41%)** for the insurer and zero downtime for the car owner.
 
 ### 6. 🔍 Enterprise Adjuster Console (Dual-Portal Experience)
 - **Executive KPI Strip:** Live metrics for total claims, straight-through rate (STP %), average turnaround time (<60s), and cumulative insurer savings.
@@ -88,10 +88,10 @@ Automatic escalation to human surveyors triggers instantly upon:
 | Stage | Module | Input | Output / Decision |
 | :--- | :--- | :--- | :--- |
 | **1. Intake & Quality Check** | OpenCV (Laplacian variance & mean exposure) | Smartphone photo / video | Verified clarity score + SHA-256 duplicate image fingerprint |
-| **2. Damage Appraisal** | Multi-Model Vision (Gemini 2.5 Flash / Groq / OpenRouter) | Damage JPEG + Claimed Part | Identified components, severity classification, bounding box $[y, x, h, w]$ |
+| **2. Damage Appraisal** | Multi-Model Vision (Gemini 2.5 Flash / Groq / OpenRouter) | Damage JPEG + Claimed Part | Identified components, severity classification, bounding box $[x, y, w, h]$ |
 | **3. Pricing & Valuation** | Deterministic Insurance Engine (`core.py`) | Damage findings + Vehicle age + Policy excess | Gross repair estimate $\to$ depreciation deduction $\to$ net claim value |
 | **4. Guardrails & Risk Check** | 10 Underwriting Safety Rules | Net claim, AI confidence, parts list | **Pass:** Instant Cash Offer ($75\% - 90\%$) OR **Fail:** Escalate to Adjuster |
-| **5. Instant Payout** | Simulated UPI / IMPS Gateway | Claimant UPI VPA (`user@bank`) | Sub-60s credit confirmation + IRDAI digital settlement voucher |
+| **5. Instant Payout** | Simulated UPI / IMPS Gateway | Claimant UPI VPA (`user@bank`) | Sub-60s credit confirmation + Official digital settlement receipt |
 
 ---
 
@@ -101,16 +101,17 @@ You can test the full pipeline directly on the **[Live Deployed App](https://aut
 
 1. **Test STP Instant Payout:**
    - In the **New Claim** tab, open `⚡ Pre-filled sample cases`.
-   - Click **Run Demo** on **Case 1: Bumper Corner Scrape**.
+   - Click **Run Demo** on **Case 1: Bumper Corner Scrape** for a minor scrape (Instant offer ~₹471), or **Case 2: Door Panel Deep Crease** for multi-part valuation with 41% savings (Instant offer ~₹4,859 vs ₹8,295 traditional garage).
    - Review the damage bounding box, the cost breakdown, and the savings comparison.
-   - Click **⚡ Accept ₹4,859 & Disburse Now** $\to$ see the PhonePe-style animated payout card $\to$ click **Download Receipt**.
+   - Click **⚡ Accept & Disburse Now** $\to$ see the PhonePe-style animated payout card $\to$ click **Download Official Settlement Receipt**.
 2. **Test Safety Guardrails & Underwriter Escalation:**
    - Click **🔄 Run Next Claim Demo**.
    - Click **Run Demo** on **Case 3: Severe Front Collision**.
-   - Observe how the AI flags structural fracture, freezes straight-through payout, and routes the claim for surveyor inspection.
-3. **Test the Enterprise Adjuster Workbench:**
+   - Observe how the AI flags structural fracture and shattered headlight, freezes straight-through payout, and routes the claim for surveyor inspection.
+3. **Test the Enterprise Adjuster Workbench & Counteroffer:**
    - Switch on the **Admin mode** toggle in the top navbar.
-   - Click the **Adjuster dashboard** tab to inspect the live KPI strip and review the side-by-side inspection workbench.
+   - Click the **Adjuster dashboard** tab to inspect the live KPI strip and review the side-by-side inspection workbench with Approve/Reject actions.
+   - Expand the **💬 Discuss Offer / Counteroffer** section to test bounded interactive negotiation.
 
 ---
 
